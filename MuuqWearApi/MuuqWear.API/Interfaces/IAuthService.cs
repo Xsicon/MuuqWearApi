@@ -6,5 +6,7 @@ public interface IAuthService
 {
     Task<Response<int>> Register(RegisterRequestDTO request);
     Task<Response<AuthResponseDTO>> VerifyOTP(VerifyOTPRequestDTO request);
+    Task<Response<AuthResponseDTO>> Login(LoginRequestDTO request); 
+
 }
 

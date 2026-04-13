@@ -1,9 +1,7 @@
-﻿using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using MuuqWear.API.DTO;
 using MuuqWear.API.Interfaces;
 using MuuqWear.API.Shared;
-using Supabase.Postgrest;
 
 namespace MuuqWear.API.Controllers
 {
@@ -38,5 +36,13 @@ namespace MuuqWear.API.Controllers
             return Ok(response);
         }
 
+        [HttpPost("login")]
+        public async Task<ActionResult<Response<AuthResponseDTO>>> Login(LoginRequestDTO request)
+        {
+            var response = await _authService.Login(request);
+            if (!response.Success)
+                return BadRequest(response);
+            return Ok(response);
+        }
     }
 }

@@ -1,7 +1,7 @@
 ﻿using MuuqWear.API.DTO;
 using MuuqWear.API.Interfaces;
+using MuuqWear.API.Models;
 using MuuqWear.API.Shared;
-using Supabase;
 using Supabase.Gotrue;
 using Client = Supabase.Client;
 
@@ -65,13 +65,53 @@ public class AuthService : IAuthService
                 AccessToken = session.AccessToken!,
                 RefreshToken = session.RefreshToken!,
                 Email = session.User?.Email ?? "",
-                UserId = session.User?.Id ?? ""
+                UserId = session.User?.Id ?? "",
+                UserName = session.User?.UserMetadata["full_name"]?.ToString() ?? ""
             };
 
             return Response<AuthResponseDTO>.SuccessResponse(
                 authData,
                 "Email Verified Successfully"
             );
+        }
+        catch (Exception ex)
+        {
+            return Response<AuthResponseDTO>.Fail("Error: " + ex.Message);
+        }
+    }
+
+    public async Task<Response<AuthResponseDTO>> Login(LoginRequestDTO request)
+    {
+        try
+        {
+            var session = await _client.Auth.SignIn(request.Email!, request.Password!);
+
+            if (session?.User == null)
+                return Response<AuthResponseDTO>.Fail("Invalid email or password");
+
+            // fetch role from Profile table
+            var userId = Guid.Parse(session.User.Id!);
+
+
+            // Fetch profile safely
+            var response = await _client
+                .From<Profiles>()
+                .Where(p => p.Id == userId)
+                .Get();
+
+            var profile = response.Models.FirstOrDefault();
+
+            var authData = new AuthResponseDTO
+            {
+                AccessToken = session.AccessToken!,
+                RefreshToken = session.RefreshToken!,
+                Email = session.User.Email ?? "",
+                UserId = session.User.Id ?? "",
+                UserName =profile?.FullName ?? "",
+                Role = profile?.Role ?? "User"
+            };
+
+            return Response<AuthResponseDTO>.SuccessResponse(authData, "Login Successful");
         }
         catch (Exception ex)
         {

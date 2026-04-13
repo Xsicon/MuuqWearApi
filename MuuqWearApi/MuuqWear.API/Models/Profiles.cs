@@ -1,10 +1,11 @@
 ﻿using Supabase.Postgrest.Attributes;
+using Supabase.Postgrest.Models;
 
 namespace MuuqWear.API.Models;
 [Table("profiles")]
-public class Profiles : Supabase.Postgrest.Models.BaseModel
+public class Profiles : BaseModel
 {
-    [PrimaryKey("id", true)]
+    [PrimaryKey("id", false)]
     public Guid? Id { get; set; }
     [Column("full_name")]
     public string? FullName { get; set; }

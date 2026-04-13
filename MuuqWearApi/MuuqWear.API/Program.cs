@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authentication.JwtBearer;
+﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using MuuqWear.API.Interfaces;
 using MuuqWear.API.Service;
@@ -13,6 +13,7 @@ var key = builder.Configuration["Authentication:SupabaseApiKey"];
 var options = new SupabaseOptions { AutoRefreshToken = true, AutoConnectRealtime = true, Schema = "MuuqWear" };
 builder.Services.AddSingleton(new Supabase.Client(url!, key, options));
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IProductService, ProductService>();
 
 // Add services to the container.
 
