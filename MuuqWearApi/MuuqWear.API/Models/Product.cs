@@ -39,4 +39,16 @@ public class Product : BaseModel
 
     [Column("is_best_seller")]
     public bool IsBestSeller { get; set; }
+
+    [Column("description")]
+    public string? Description { get; set; }
+
+    [Column("sizes")]
+    public string? Sizes { get; set; }
+
+    [Column("gender")]
+    public string? Gender { get; set; }
+
+    [Column("category_id")]
+    public Guid? CategoryId { get; set; }
 }

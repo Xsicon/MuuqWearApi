@@ -4,11 +4,17 @@ using MuuqWear.API.Shared;
 namespace MuuqWear.API.Interfaces;
 public interface IProductService
 {
-    Task<Response<List<ProductDTO>>> GetAll();
+    // add search parameter
+    Task<Response<PaginatedResponse<ProductDTO>>> GetAll(int page = 1, int pageSize = 10, string? search = null);
+    Task<Response<HomeProductsDTO>> GetHomeProducts();
+    Task<Response<ProductDTO>> GetById(Guid id);
+    Task<Response<List<ProductDTO>>> GetRelated(Guid productId, Guid? categoryId);
     Task<Response<ProductDTO>> Add(AddProductDTO request);
     Task<Response<string>> UploadImage(IFormFile file);
     Task<Response<ProductDTO>> Update(Guid id, UpdateProductDTO request);
     Task<Response<bool>> Delete(Guid id);
+    Task<Response<ProductImageDTO>> AddProductImage(AddProductImageDTO request);
+    Task<Response<bool>> DeleteProductImage(Guid imageId);
 
 
 }

@@ -11,4 +11,8 @@ public class UpdateProductDTO
     public bool IsNewArrival { get; set; }
     public bool IsFeatured { get; set; }
     public bool IsBestSeller { get; set; }
+    public string? Description { get; set; }
+    public string? Sizes { get; set; }
+    public string? Gender { get; set; }
+    public Guid? CategoryId { get; set; }
 }

@@ -5,7 +5,7 @@ namespace MuuqWear.API.Models;
 [Table("profiles")]
 public class Profiles : BaseModel
 {
-    [PrimaryKey("id", false)]
+    [PrimaryKey("id", true)]
     public Guid? Id { get; set; }
     [Column("full_name")]
     public string? FullName { get; set; }

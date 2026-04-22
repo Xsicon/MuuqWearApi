@@ -18,6 +18,7 @@ public class AuthService : IAuthService
 
     public async Task<Response<int>> Register(RegisterRequestDTO request)
     {
+        Supabase.Gotrue.User? user = null;
         try
         {
             var options = new Supabase.Gotrue.SignUpOptions
@@ -28,25 +29,36 @@ public class AuthService : IAuthService
     }
             };
 
-            var result = await _client.Auth.SignUp(request.Email!, request.Password!, options);
+            var response = await _client.Auth.SignUp(request.Email!, request.Password!, options);
+            user = response?.User;
 
-            if (result?.User == null)
+            if (user == null)
                 return Response<int>.Fail("Registration failed");
 
-            return Response<int>.SuccessResponse(1, "Registration successful");
+            await _client.From<Profiles>().Insert(new Profiles
+            {
+                Id = Guid.Parse(user.Id!),
+                FullName = request?.FullName,
+                Phone = null,
+                Role = "user",
+                Email = request?.Email,
+                CreatedAt = DateTime.UtcNow
+            });
+
+            return Response<int>.SuccessResponse(1, "Registered successfully. Please verify your email.");
         }
         catch (Exception ex)
         {
-            if (ex.Message.Contains("already registered", StringComparison.OrdinalIgnoreCase))
-            {
-                return Response<int>.Fail("Email already exists");
-            }
+            // if profile insert failed after signup
+            if (ex.Message.Contains("23505"))
+                return Response<int>.Fail("Email already registered. Please login.");
 
+            if (ex.Message.Contains("23502"))
+                return Response<int>.Fail("Registration failed. Please try again.");
 
-            return Response<int>.Fail("Error: " + ex.Message);
+            return Response<int>.Fail("Something went wrong. Please try again.");
         }
     }
-
     public async Task<Response<AuthResponseDTO>> VerifyOTP(VerifyOTPRequestDTO request)
     {
         try
@@ -59,15 +71,26 @@ public class AuthService : IAuthService
 
             if (session == null)
                 return Response<AuthResponseDTO>.Fail("Verification failed");
-
+            var fullName = "";
+            if (session.User?.UserMetadata != null && session.User.UserMetadata.ContainsKey("full_name"))
+            {
+                fullName = session.User.UserMetadata["full_name"]?.ToString() ?? "";
+            }
+            var profile = await _client
+    .From<Profiles>()
+    .Filter("id", Supabase.Postgrest.Constants.Operator.Equals, session.User!.Id!)
+    .Single();
             var authData = new AuthResponseDTO
             {
                 AccessToken = session.AccessToken!,
                 RefreshToken = session.RefreshToken!,
                 Email = session.User?.Email ?? "",
                 UserId = session.User?.Id ?? "",
-                UserName = session.User?.UserMetadata["full_name"]?.ToString() ?? ""
+                UserName = fullName,
+                Role = profile?.Role!
             };
+
+            // fetch role separately — don't let it break OTP flow
 
             return Response<AuthResponseDTO>.SuccessResponse(
                 authData,
@@ -107,7 +130,7 @@ public class AuthService : IAuthService
                 RefreshToken = session.RefreshToken!,
                 Email = session.User.Email ?? "",
                 UserId = session.User.Id ?? "",
-                UserName =profile?.FullName ?? "",
+                UserName = profile?.FullName ?? "",
                 Role = profile?.Role ?? "User"
             };
 
@@ -116,6 +139,19 @@ public class AuthService : IAuthService
         catch (Exception ex)
         {
             return Response<AuthResponseDTO>.Fail("Error: " + ex.Message);
+        }
+    }
+
+    public async Task<Response<int>> Logout()
+    {
+        try
+        {
+            await _client.Auth.SignOut();
+            return Response<int>.SuccessResponse(1, "Logged out successfully");
+        }
+        catch (Exception ex)
+        {
+            return Response<int>.Fail("Error: " + ex.Message);
         }
     }
 }

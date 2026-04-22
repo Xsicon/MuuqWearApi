@@ -5,8 +5,11 @@ namespace MuuqWear.API.Interfaces;
 public interface IAuthService
 {
     Task<Response<int>> Register(RegisterRequestDTO request);
+    Task<Response<int>> SendMagicLink(string email);
     Task<Response<AuthResponseDTO>> VerifyOTP(VerifyOTPRequestDTO request);
-    Task<Response<AuthResponseDTO>> Login(LoginRequestDTO request); 
+    Task<Response<AuthResponseDTO>> Login(LoginRequestDTO request);
+    Task<Response<int>> Logout();
+
 
 }
 
