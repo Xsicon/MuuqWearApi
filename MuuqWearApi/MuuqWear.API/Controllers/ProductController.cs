@@ -17,30 +17,45 @@ public class ProductController : ControllerBase
 
     [HttpGet("all")]
     public async Task<ActionResult<Response<PaginatedResponse<ProductDTO>>>> GetAll(
-     [FromQuery] int page = 1,
-     [FromQuery] int pageSize = 10,
-     [FromQuery] string? search = null)
+      [FromQuery] int page = 1,
+      [FromQuery] int pageSize = 10,
+      [FromQuery] string? search = null,
+      [FromQuery] Guid? categoryId = null,
+      [FromQuery] string? sizes = null,
+      [FromQuery] decimal? minPrice = null,
+      [FromQuery] decimal? maxPrice = null,
+      [FromQuery] string? sortBy = null)
     {
-        if (page < 1) page = 1;
-        if (pageSize < 1) pageSize = 10;
-        if (pageSize > 100) pageSize = 100;
-        search = search?.Replace("%", "\\%").Replace("_", "\\_");
-        if (string.IsNullOrWhiteSpace(search)) search = null;
+        // build filter object ✅
+        var filter = new ProductFilterDTO
+        {
+            Page = page < 1 ? 1 : page,
+            PageSize = pageSize < 1 ? 10 : Math.Min(pageSize, 100),
+            Search = string.IsNullOrWhiteSpace(search) ? null : search.Trim(),
+            CategoryId = categoryId,
+            Sizes = sizes,
+            MinPrice = minPrice.HasValue && minPrice >= 0 ? minPrice : null,
+            MaxPrice = maxPrice.HasValue && maxPrice >= 0 ? maxPrice : null,
+            SortBy = new[] { "featured", "price_asc", "price_desc", "newest" }
+                .Contains(sortBy) ? sortBy : "featured"
+        };
 
-        var response = await _productService.GetAll(page, pageSize, search);
+        var response = await _productService.GetAll(filter);
 
-        // ✅ if page exceeds total pages → return last page
+        // fix page exceeds total
         if (response.Success && response.Data != null)
         {
             var totalPages = response.Data.TotalPages;
-            if (totalPages > 0 && page > totalPages)
+            if (totalPages > 0 && filter.Page > totalPages)
             {
-                response = await _productService.GetAll(totalPages, pageSize, search);
+                filter.Page = totalPages;
+                response = await _productService.GetAll(filter);
             }
         }
 
         if (!response.Success)
             return BadRequest(response);
+
         return Ok(response);
     }
 

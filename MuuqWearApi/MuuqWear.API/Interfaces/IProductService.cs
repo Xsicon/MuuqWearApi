@@ -5,7 +5,7 @@ namespace MuuqWear.API.Interfaces;
 public interface IProductService
 {
     // add search parameter
-    Task<Response<PaginatedResponse<ProductDTO>>> GetAll(int page = 1, int pageSize = 10, string? search = null);
+    Task<Response<PaginatedResponse<ProductDTO>>> GetAll(ProductFilterDTO filter);
     Task<Response<HomeProductsDTO>> GetHomeProducts();
     Task<Response<ProductDTO>> GetById(Guid id);
     Task<Response<List<ProductDTO>>> GetRelated(Guid productId, Guid? categoryId);

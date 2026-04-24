@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using MuuqWear.API.DTO;
+using MuuqWear.API.DTO.AuthDTO;
 using MuuqWear.API.Interfaces;
 using MuuqWear.API.Shared;
 
@@ -57,30 +58,90 @@ namespace MuuqWear.API.Controllers
             return Ok(response);
         }
 
-        [HttpGet("me")]
-        public IActionResult Me()
+        [HttpPost("magic-link")]
+        public async Task<ActionResult<Response<int>>> SendMagicLink(
+    [FromBody] MagicLinkRequestDTO request)
         {
-            var authCookie = Request.Cookies["muuqwear_auth"];
-            System.Diagnostics.Debug.WriteLine($"Cookie value: " +
-                $"{authCookie?.Substring(0, Math.Min(50, authCookie?.Length ?? 0))}");
+            // validate request
+            if (string.IsNullOrWhiteSpace(request.Email))
+                return BadRequest(Response<int>.Fail("Email is required"));
 
-            if (string.IsNullOrEmpty(authCookie))
-                return Unauthorized();
+            var response = await _authService.SendMagicLink(request.Email);
 
-            try
-            {
-                var authData = System.Text.Json.JsonSerializer.Deserialize<AuthResponseDTO>(authCookie);
+            if (!response.Success)
+                return BadRequest(response);
 
-                if (authData == null)
-                    return Unauthorized();
+            return Ok(response);
+        }
 
-                return Ok(Response<AuthResponseDTO>.SuccessResponse(authData, "User found"));
-            }
-            catch
-            {
-                return Unauthorized();
-            }
+        [HttpPost("verify-magic-link")]
+        public async Task<ActionResult<Response<AuthResponseDTO>>> VerifyMagicLink(
+    [FromBody] MagicLinkVerifyRequestDTO request)
+        {
+            if (string.IsNullOrEmpty(request.AccessToken))
+                return BadRequest(Response<AuthResponseDTO>.Fail("Access token required"));
+
+            var response = await _authService.VerifyMagicLink(
+                request.AccessToken, request.RefreshToken ?? "");
+
+            if (!response.Success)
+                return BadRequest(response);
+
+            return Ok(response);
+        }
+
+        [HttpGet("google-signin-url")]
+        public async Task<ActionResult<Response<string>>> GetGoogleSignInUrl()
+        {
+            var response = await _authService.GetGoogleSignInUrl();
+
+            if (!response.Success)
+                return BadRequest(response);
+
+            return Ok(response);
+        }
+
+        [HttpPost("forgot-password")]
+        public async Task<ActionResult<Response<int>>> ForgotPassword(
+    [FromBody] ForgotPasswordRequestDTO request)
+        {
+            // validate request
+            if (string.IsNullOrWhiteSpace(request.Email))
+                return BadRequest(Response<int>.Fail("Email is required"));
+
+            var response = await _authService.SendPasswordReset(request.Email);
+
+            if (!response.Success)
+                return BadRequest(response);
+
+            return Ok(response);
+        }
+
+        [HttpPost("reset-password")]
+        public async Task<ActionResult<Response<int>>> ResetPassword(
+            [FromBody] ResetPasswordRequestDTO request)
+        {
+            // validate request
+            if (string.IsNullOrWhiteSpace(request.AccessToken))
+                return BadRequest(Response<int>.Fail("Invalid token"));
+
+            if (string.IsNullOrWhiteSpace(request.NewPassword))
+                return BadRequest(Response<int>.Fail("Password is required"));
+
+            if (request.NewPassword != request.ConfirmPassword)
+                return BadRequest(Response<int>.Fail("Passwords do not match"));
+
+            var response = await _authService.UpdatePassword(
+                request.AccessToken,
+                request.RefreshToken ?? "",
+                request.NewPassword);
+
+            if (!response.Success)
+                return BadRequest(response);
+
+            return Ok(response);
         }
 
     }
+
 }

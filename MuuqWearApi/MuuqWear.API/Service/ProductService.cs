@@ -16,93 +16,79 @@ public class ProductService : IProductService
         _client = client;
     }
 
-    public async Task<Response<PaginatedResponse<ProductDTO>>> GetAll(int page = 1, int pageSize = 10, string? search = null)
+    public async Task<Response<PaginatedResponse<ProductDTO>>> GetAll(ProductFilterDTO filter)
     {
         try
         {
-            // Step 1 — get count via RPC
-            // returns just a number, no data fetched ✅
-            var parameters = new Dictionary<string, object>
+            // Step 1 — build base parameters
+            var baseParams = BuildFilterParameters(filter);
+
+            // Step 2 — get count via RPC
+            var countResult = await _client.Rpc("get_products_count", baseParams);
+
+            var totalCount = 0;
+            if (!int.TryParse(countResult.Content?.Trim('"'), out totalCount))
+                totalCount = 0;
+
+            // Step 3 — calculate offset
+            var offset = (filter.Page - 1) * filter.PageSize;
+
+            // Step 4 — fetch via get_products RPC
+            var dataParams = new Dictionary<string, object>(baseParams)
         {
-            { "search_term", search ?? "" }
+            { "p_sort_by", filter.SortBy ?? "newest" },
+            { "p_page_size", filter.PageSize },
+            { "p_offset", offset }
         };
-            var countResult = await _client.Rpc("get_products_count", parameters);
-            var totalCount = int.Parse(countResult.Content!.Trim('"'));
 
-            // Step 2 — calculate page range
-            var startIndex = (page - 1) * pageSize;
-            var endIndex = startIndex + pageSize - 1;
+            var dataResult = await _client.Rpc("get_products", dataParams);
 
-            // Step 3 — fetch only current page
-            if (!string.IsNullOrEmpty(search))
+            // Step 5 — deserialize
+            var options = new System.Text.Json.JsonSerializerOptions
             {
-                var result = await _client
-                    .From<Product>()
-                    .Filter("name", Supabase.Postgrest.Constants.Operator.ILike, $"%{search}%")
-                    .Order("created_at", Supabase.Postgrest.Constants.Ordering.Descending)
-                    .Range(startIndex, endIndex)
-                    .Get();
+                PropertyNameCaseInsensitive = true,
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower
+            };
 
-                var products = MapToDTO(result.Models);
+            var products = System.Text.Json.JsonSerializer
+                .Deserialize<List<ProductDTO>>(
+                    dataResult.Content ?? "[]", options)
+                ?? new List<ProductDTO>();
 
-                return Response<PaginatedResponse<ProductDTO>>.SuccessResponse(
-                    new PaginatedResponse<ProductDTO>
-                    {
-                        Data = products,
-                        TotalCount = totalCount,
-                        Page = page,
-                        PageSize = pageSize
-                    }, "Products fetched successfully");
-            }
-            else
+            // Step 6 — build paginated response
+            var paginatedResponse = new PaginatedResponse<ProductDTO>
             {
-                var result = await _client
-                    .From<Product>()
-                    .Order("created_at", Supabase.Postgrest.Constants.Ordering.Descending)
-                    .Range(startIndex, endIndex)
-                    .Get();
+                Data = products,
+                TotalCount = totalCount,
+                Page = filter.Page,
+                PageSize = filter.PageSize
+            };
 
-                var products = MapToDTO(result.Models);
-
-                return Response<PaginatedResponse<ProductDTO>>.SuccessResponse(
-                    new PaginatedResponse<ProductDTO>
-                    {
-                        Data = products,
-                        TotalCount = totalCount,
-                        Page = page,
-                        PageSize = pageSize
-                    }, "Products fetched successfully");
-            }
+            return Response<PaginatedResponse<ProductDTO>>
+                .SuccessResponse(paginatedResponse, "Products fetched successfully");
         }
         catch (Exception ex)
         {
-            return Response<PaginatedResponse<ProductDTO>>.Fail("Error: " + ex.Message);
+            return Response<PaginatedResponse<ProductDTO>>
+                .Fail("Error: " + ex.Message);
         }
     }
 
-    // extract mapping to private method to avoid repetition
-    private List<ProductDTO> MapToDTO(List<Product> models)
+    private Dictionary<string, object> BuildFilterParameters(ProductFilterDTO filter)
     {
-        return models.Select(p => new ProductDTO
-        {
-            Id = p.Id,
-            Name = p.Name,
-            Price = p.Price,
-            Badge = p.Badge,
-            ImageUrl = p.ImageUrl,
-            Stock = p.Stock,
-            IsActive = p.IsActive,
-            CreatedAt = p.CreatedAt,
-            IsBestSeller = p.IsBestSeller,
-            IsFeatured = p.IsFeatured,
-            IsNewArrival = p.IsNewArrival,
-            CategoryId = p.CategoryId,
-            Sizes = p.Sizes,
-            Gender = p.Gender,
-            Description = p.Description
-        }).ToList();
+        return new Dictionary<string, object>
+    {
+        { "p_search_term", filter.Search ?? "" },
+        { "p_category_id", filter.CategoryId.HasValue
+            ? (object)filter.CategoryId.Value.ToString()
+            : null! },
+        { "p_size_filter", filter.Sizes ?? "" },
+        { "p_min_price", filter.MinPrice ?? 0 },
+        { "p_max_price", filter.MaxPrice ?? 999999 }
+    };
     }
-    public async Task<Response<HomeProductsDTO>> GetHomeProducts()
+
+     public async Task<Response<HomeProductsDTO>> GetHomeProducts()
     {
         try
         {

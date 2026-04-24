@@ -9,7 +9,10 @@ public interface IAuthService
     Task<Response<AuthResponseDTO>> VerifyOTP(VerifyOTPRequestDTO request);
     Task<Response<AuthResponseDTO>> Login(LoginRequestDTO request);
     Task<Response<int>> Logout();
-
+    Task<Response<AuthResponseDTO>> VerifyMagicLink(string accessToken, string refreshToken);
+    Task<Response<string>> GetGoogleSignInUrl();
+    Task<Response<int>> SendPasswordReset(string email);
+    Task<Response<int>> UpdatePassword(string accessToken, string refreshToken, string newPassword);
 
 }
 
