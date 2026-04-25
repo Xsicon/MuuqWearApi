@@ -1,4 +1,5 @@
-﻿using MuuqWear.API.DTO.ProductDTO;
+﻿using Microsoft.AspNetCore.Http;
+using MuuqWear.API.DTO.ProductDTO;
 using MuuqWear.API.Interfaces;
 using MuuqWear.API.Models;
 using MuuqWear.API.Shared;
