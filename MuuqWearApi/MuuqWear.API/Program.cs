@@ -2,6 +2,8 @@
 using Microsoft.IdentityModel.Tokens;
 using MuuqWear.API.Interfaces;
 using MuuqWear.API.Service;
+using MuuqWear.Application.Interfaces;
+using MuuqWear.Application.Service;
 using Supabase;
 using System.Text;
 
@@ -15,6 +17,7 @@ builder.Services.AddSingleton(new Supabase.Client(url!, key, options));
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
+builder.Services.AddScoped<ICartService, CartService>();
 
 // Add services to the container.
 
@@ -23,7 +26,6 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddAuthorization();
-var bytes = Encoding.UTF8.GetBytes(builder.Configuration["Authentication:JwtSecret"]!);
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
@@ -38,11 +40,33 @@ builder.Services
 .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 .AddJwtBearer(options =>
 {
-    options.Authority = "http://127.0.0.1:54321/auth/v1";
-    options.RequireHttpsMetadata = false;
+    // directly provide signing keys ✅
+    var jwks = new JsonWebKeySet(builder.Configuration["SupaBase:JwksJson"]!);
+    var signingKeys = jwks.GetSigningKeys();
+
     options.TokenValidationParameters = new TokenValidationParameters
     {
-        ValidateAudience = false
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKeys = signingKeys,
+        ValidateIssuer = false,
+        ValidateAudience = false,
+        ValidateLifetime = true
+    };
+
+    options.RequireHttpsMetadata = false;
+
+    options.Events = new JwtBearerEvents
+    {
+        OnAuthenticationFailed = context =>
+        {
+            System.Diagnostics.Debug.WriteLine($"JWT Error: {context.Exception.Message}");
+            return Task.CompletedTask;
+        },
+        OnTokenValidated = context =>
+        {
+            System.Diagnostics.Debug.WriteLine("JWT Valid ✅");
+            return Task.CompletedTask;
+        }
     };
 });
 

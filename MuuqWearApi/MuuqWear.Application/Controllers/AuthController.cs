@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using MuuqWear.API.DTO;
 using MuuqWear.API.DTO.AuthDTO;
 using MuuqWear.API.Interfaces;

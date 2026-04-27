@@ -5,7 +5,7 @@ namespace MuuqWear.API.Models;
 [Table("products")]
 public class Product : BaseModel
 {
-    [PrimaryKey("id", false)]
+    [PrimaryKey("id", true)]
     public Guid Id { get; set; }
 
     [Column("name")]
