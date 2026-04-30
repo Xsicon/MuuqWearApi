@@ -27,7 +27,7 @@ public class ProductController : ControllerBase
       [FromQuery] decimal? maxPrice = null,
       [FromQuery] string? sortBy = null)
     {
-        // build filter object ✅
+        // build filter object 
         var filter = new ProductFilterDTO
         {
             Page = page < 1 ? 1 : page,
@@ -121,7 +121,7 @@ public class ProductController : ControllerBase
         var response = await _productService.GetById(id);
 
         if (!response.Success)
-            return NotFound(response); // 404 if product not found ✅
+            return NotFound(response); // 404 if product not found 
 
         return Ok(response);
     }

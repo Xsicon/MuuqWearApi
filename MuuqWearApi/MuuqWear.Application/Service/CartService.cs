@@ -21,7 +21,7 @@ public class CartService : ICartService
     {
         try
         {
-            // single query with JOIN ✅
+            // single query with JOIN 
             var parameters = new Dictionary<string, object>
         {
             { "p_user_id", userId }
@@ -222,7 +222,7 @@ public class CartService : ICartService
                     userId.ToString())
                 .Delete();
 
-            // return empty cart ✅
+            // return empty cart 
             return Response<CartDTO>.SuccessResponse(
                 new CartDTO(), "Cart cleared");
         }

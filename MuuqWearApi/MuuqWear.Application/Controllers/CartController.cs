@@ -19,11 +19,11 @@ public class CartController : ControllerBase
     }
 
     // =============================================
-    // HELPER — get user id from cookie claims ✅
+    // HELPER — get user id from cookie claims 
     // =============================================
     private Guid? GetUserId()
     {
-        // .NET maps "sub" to NameIdentifier ✅
+        // .NET maps "sub" to NameIdentifier 
         var sub = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
 
         if (string.IsNullOrEmpty(sub)) return null;
