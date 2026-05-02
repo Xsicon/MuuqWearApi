@@ -12,9 +12,10 @@ public class ProductService : IProductService
 {
     private readonly Supabase.Client _client;
 
-    public ProductService(Supabase.Client client)
+    public ProductService(SupabaseClientFactory factory)
     {
-        _client = client;
+        _client = factory.CreateClient();
+
     }
 
     public async Task<Response<PaginatedResponse<ProductDTO>>> GetAll(ProductFilterDTO filter)
@@ -89,7 +90,7 @@ public class ProductService : IProductService
     };
     }
 
-     public async Task<Response<HomeProductsDTO>> GetHomeProducts()
+    public async Task<Response<HomeProductsDTO>> GetHomeProducts()
     {
         try
         {

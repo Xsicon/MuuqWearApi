@@ -12,8 +12,9 @@ var url = builder.Configuration["SupaBase:Url"];
 var key = builder.Configuration["Authentication:SupabaseApiKey"];
 // Add services to the container.
 
-var options = new SupabaseOptions { AutoRefreshToken = true, AutoConnectRealtime = true, Schema = "MuuqWear" };
-builder.Services.AddSingleton(new Supabase.Client(url!, key, options));
+var options = new SupabaseOptions { AutoRefreshToken = false, AutoConnectRealtime = true, Schema = "MuuqWear" };
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<SupabaseClientFactory>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
@@ -34,14 +35,14 @@ builder.Services.AddCors(options =>
         policy.WithOrigins("http://localhost:5276") // your frontend URL
               .AllowAnyHeader()
               .AllowAnyMethod()
-              .AllowCredentials(); // ✅ required for cookies
+              .AllowCredentials(); //  required for cookies
     });
 });
 builder.Services
 .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 .AddJwtBearer(options =>
 {
-    // directly provide signing keys ✅
+    // directly provide signing keys 
     var jwks = new JsonWebKeySet(builder.Configuration["SupaBase:JwksJson"]!);
     var signingKeys = jwks.GetSigningKeys();
 
@@ -60,12 +61,12 @@ builder.Services
     {
         OnAuthenticationFailed = context =>
         {
-            System.Diagnostics.Debug.WriteLine($"JWT Error: {context.Exception.Message}");
+            System.Diagnostics.Debug.WriteLine($"JWT rejected: {context.Exception.Message}"); ;
             return Task.CompletedTask;
         },
         OnTokenValidated = context =>
         {
-            System.Diagnostics.Debug.WriteLine("JWT Valid ✅");
+            System.Diagnostics.Debug.WriteLine("JWT Valid ");
             return Task.CompletedTask;
         }
     };

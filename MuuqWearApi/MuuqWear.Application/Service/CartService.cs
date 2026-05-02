@@ -7,11 +7,12 @@ using Supabase;
 namespace MuuqWear.Application.Service;
 public class CartService : ICartService
 {
-    private readonly Client _client;
+    private readonly Supabase.Client _client;
 
-    public CartService(Client client)
+    public CartService(SupabaseClientFactory factory)
     {
-        _client = client;
+        _client = factory.CreateClient();
+
     }
 
     // =============================================

@@ -13,6 +13,7 @@ public interface IAuthService
     Task<Response<string>> GetGoogleSignInUrl();
     Task<Response<int>> SendPasswordReset(string email);
     Task<Response<int>> UpdatePassword(string accessToken, string refreshToken, string newPassword);
+    Task<Response<AuthResponseDTO>> RefreshToken(string refreshToken);
 
 }
 

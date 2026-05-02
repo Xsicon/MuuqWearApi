@@ -7,11 +7,11 @@ using Supabase;
 namespace MuuqWear.API.Service;
 public class CategoryService : ICategoryService
 {
-    private readonly Client _client;
+    private readonly Supabase.Client _client;
 
-    public CategoryService(Client client)
+    public CategoryService(SupabaseClientFactory factory)
     {
-        _client = client;
+        _client = factory.CreateClient();
     }
 
     public async Task<Response<List<CategoryDTO>>> GetAll()

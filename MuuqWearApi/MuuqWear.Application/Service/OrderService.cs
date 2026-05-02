@@ -8,11 +8,11 @@ using Supabase;
 namespace MuuqWear.Application.Service;
 public class OrderService : IOrderService
 {
-    private readonly Client _client;
+    private readonly Supabase.Client _client;
 
-    public OrderService(Client client)
+    public OrderService(SupabaseClientFactory factory)
     {
-        _client = client;
+        _client = factory.CreateClient();
     }
 
     // =============================================

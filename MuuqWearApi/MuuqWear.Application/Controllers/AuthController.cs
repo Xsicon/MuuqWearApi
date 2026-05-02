@@ -4,6 +4,7 @@ using MuuqWear.API.DTO;
 using MuuqWear.API.DTO.AuthDTO;
 using MuuqWear.API.Interfaces;
 using MuuqWear.API.Shared;
+using MuuqWear.Model.DTO.AuthDTO;
 
 namespace MuuqWear.API.Controllers
 {
@@ -143,6 +144,21 @@ namespace MuuqWear.API.Controllers
             return Ok(response);
         }
 
+        [HttpPost("refresh-token")]
+        public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.RefreshToken))
+                return BadRequest(Response<AuthResponseDTO>.Fail("Refresh token is required"));
+
+            var response = await _authService.RefreshToken(request.RefreshToken);
+
+            if (!response.Success)
+                return BadRequest(response);
+
+            return Ok(response);
+        }
     }
+
+
 
 }

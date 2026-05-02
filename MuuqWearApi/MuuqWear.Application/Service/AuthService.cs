@@ -1,22 +1,25 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using MuuqWear.API.DTO;
 using MuuqWear.API.Interfaces;
 using MuuqWear.API.Models;
 using MuuqWear.API.Shared;
 using Supabase.Gotrue;
+using System.Net.Http.Json;
+using System.Text.Json;
 using Client = Supabase.Client;
 
 
 namespace MuuqWear.API.Service;
 public class AuthService : IAuthService
 {
-    private readonly Client _client;
+    private readonly Supabase.Client _client;
     private readonly IConfiguration _configuration;
 
-    public AuthService(Client client, IConfiguration configuration)
+    public AuthService(SupabaseClientFactory factory, IConfiguration configuration)
     {
-        _client = client;
+        _client = factory.CreateClient();
         _configuration = configuration;
     }
 
@@ -164,13 +167,13 @@ public class AuthService : IAuthService
         try
         {
             // validate email before calling Supabase
-            // prevents unnecessary API calls ✅
+            // prevents unnecessary API calls 
             if (string.IsNullOrWhiteSpace(email))
                 return Response<int>.Fail("Email is required");
 
             // Supabase sends magic link email
             // user clicks link → redirected to callback URL
-            // configured in config.toml ✅
+            // configured in config.toml 
             var redirectUrl = _configuration["Auth:MagicLinkRedirectUrl"]
                ?? "http://localhost:5276/auth/magic-link-callback";
 
@@ -269,7 +272,7 @@ public class AuthService : IAuthService
                         ?? "http://localhost:5276/auth/google-callback"
                 });
 
-            // Uri property contains the Google OAuth URL ✅
+            // Uri property contains the Google OAuth URL 
             var url = state?.Uri?.ToString();
 
             if (string.IsNullOrEmpty(url))
@@ -351,6 +354,49 @@ public class AuthService : IAuthService
                     "Reset link has expired. Please request a new one.");
 
             return Response<int>.Fail("Error: " + ex.Message);
+        }
+    }
+
+    public async Task<Response<AuthResponseDTO>> RefreshToken(string refreshToken)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(refreshToken))
+                return Response<AuthResponseDTO>.Fail("Refresh token is required");
+
+            var supabaseUrl = _configuration["SupaBase:Url"];
+            var supabaseKey = _configuration["Authentication:SupabaseApiKey"];
+
+            using var http = new HttpClient();
+            http.DefaultRequestHeaders.Add("apikey", supabaseKey);
+
+            var body = new { refresh_token = refreshToken };
+            var result = await http.PostAsJsonAsync(
+                $"{supabaseUrl}/auth/v1/token?grant_type=refresh_token", body);
+
+            if (!result.IsSuccessStatusCode)
+            {
+                var errorBody = await result.Content.ReadAsStringAsync();
+                System.Diagnostics.Debug.WriteLine($"Supabase rejected refresh: {errorBody}"); // ← add this
+
+                return Response<AuthResponseDTO>.Fail("Invalid or expired refresh token");
+            }
+            var json = await result.Content.ReadFromJsonAsync<JsonElement>();
+
+            var authData = new AuthResponseDTO
+            {
+                AccessToken = json.GetProperty("access_token").GetString()!,
+                RefreshToken = json.GetProperty("refresh_token").GetString()!,
+                Email = json.GetProperty("user").GetProperty("email").GetString() ?? "",
+                UserId = json.GetProperty("user").GetProperty("id").GetString() ?? "",
+            };
+
+            return Response<AuthResponseDTO>.SuccessResponse(
+                authData, "Token refreshed successfully");
+        }
+        catch (Exception ex)
+        {
+            return Response<AuthResponseDTO>.Fail("Error: " + ex.Message);
         }
     }
 }
