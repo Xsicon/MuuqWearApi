@@ -130,6 +130,9 @@ public class AuthService : IAuthService
                 .Get();
 
             var profile = response.Models.FirstOrDefault();
+            if (profile?.IsDeleted == true)
+                return Response<AuthResponseDTO>.Fail(
+                    "This account has been deleted. Please contact support.");
 
             var authData = new AuthResponseDTO
             {
@@ -382,7 +385,25 @@ public class AuthService : IAuthService
                 return Response<AuthResponseDTO>.Fail("Invalid or expired refresh token");
             }
             var json = await result.Content.ReadFromJsonAsync<JsonElement>();
+            var userId = json.GetProperty("user")
+                        .GetProperty("id").GetString() ?? "";
 
+            //  check is_deleted after successful token refresh
+            if (!string.IsNullOrEmpty(userId) && Guid.TryParse(userId, out var userGuid))
+            {
+                var profileResponse = await _client
+                    .From<Profiles>()
+                    .Where(p => p.Id == userGuid)
+                    .Get();
+
+                var profile = profileResponse.Models.FirstOrDefault();
+                System.Diagnostics.Debug.WriteLine($"RefreshToken check — userId: {userId}");
+                System.Diagnostics.Debug.WriteLine($"Profile found: {profile != null}");
+                System.Diagnostics.Debug.WriteLine($"IsDeleted: {profile?.IsDeleted}");
+                if (profile?.IsDeleted == true)
+                    return Response<AuthResponseDTO>.Fail(
+                        "This account has been deleted.");
+            }
             var authData = new AuthResponseDTO
             {
                 AccessToken = json.GetProperty("access_token").GetString()!,

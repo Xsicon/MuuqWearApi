@@ -17,4 +17,9 @@ public class Profiles : BaseModel
     public DateTime? CreatedAt { get; set; }
     [Column("email")]
     public string? Email { get; set; }
+    [Column("is_deleted")]
+    public bool IsDeleted { get; set; } = false;
+
+    [Column("deleted_at")]
+    public DateTime? DeletedAt { get; set; }
 }

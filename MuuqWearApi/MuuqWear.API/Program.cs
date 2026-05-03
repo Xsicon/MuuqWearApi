@@ -20,7 +20,8 @@ builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
-
+builder.Services.AddScoped<IAddressService, AddressService>();
+builder.Services.AddScoped<IProfileService, ProfileService>();
 // Add services to the container.
 
 builder.Services.AddControllers();
@@ -52,7 +53,9 @@ builder.Services
         IssuerSigningKeys = signingKeys,
         ValidateIssuer = false,
         ValidateAudience = false,
-        ValidateLifetime = true
+        ValidateLifetime = true,
+        RoleClaimType = "app_role"
+
     };
 
     options.RequireHttpsMetadata = false;
