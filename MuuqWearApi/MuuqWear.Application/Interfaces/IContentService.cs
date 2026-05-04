@@ -1,4 +1,6 @@
-﻿using MuuqWear.API.Shared;
+﻿using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using MuuqWear.API.Shared;
 using MuuqWear.Model.DTO.ContentItemDTO;
 
 namespace MuuqWear.Application.Interfaces;
@@ -25,4 +27,5 @@ public interface IContentService
 
     // unpublish item
     Task<Response<ContentItemDTO>> Unpublish(ContentCategory type, Guid id);
+    Task<Response<string>> UploadImage(IFormFile file);
 }

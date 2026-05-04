@@ -16,7 +16,7 @@ namespace MuuqWear.Application.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
-public class ProfileController : ControllerBase
+public class ProfileController : BaseController
 {
     private readonly IProfileService _profileService;
 
@@ -25,29 +25,20 @@ public class ProfileController : ControllerBase
         _profileService = profileService;
     }
 
-    private Guid GetUserId()
-    {
-        var userId = User.FindFirst("sub")?.Value
-                  ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        return Guid.TryParse(userId, out var id) ? id : Guid.Empty;
-    }
 
     [HttpGet]
-    public async Task<IActionResult> Get()
+    public async Task<ActionResult<Response<ProfileDTO>>> Get()
     {
         var userId = GetUserId();
         if (userId == Guid.Empty)
-            return StatusCode(401, Response<OrderDTO>.Fail("Not authenticated"));
+            return StatusCode(401, Response<ProfileDTO>.Fail("Not authenticated"));
 
         var result = await _profileService.GetProfile(userId);
-        if (!result.Success)
-            return BadRequest(result);
-
-        return Ok(result);
+        return HandleResponse(result);
     }
 
     [HttpPut]
-    public async Task<IActionResult> Update([FromBody] UpdateProfileDTO request)
+    public async Task<ActionResult<Response<ProfileDTO>>> Update([FromBody] UpdateProfileDTO request)
     {
         if (string.IsNullOrWhiteSpace(request.FullName))
             return BadRequest(Response<ProfileDTO>.Fail("Full name is required"));
@@ -60,11 +51,11 @@ public class ProfileController : ControllerBase
         if (!result.Success)
             return BadRequest(result);
 
-        return Ok(result);
+        return HandleResponse(result);
     }
 
     [HttpDelete("delete-account")]
-    public async Task<IActionResult> DeleteAccount()
+    public async Task<ActionResult<Response<bool>>> DeleteAccount()
     {
         var userId = GetUserId();
         if (userId == Guid.Empty)
@@ -74,7 +65,7 @@ public class ProfileController : ControllerBase
         if (!result.Success)
             return BadRequest(result);
 
-        return Ok(result);
+        return HandleResponse(result);
     }
 
     // ─── CHECK IF ACTIVE ──────────────────────────────────────────

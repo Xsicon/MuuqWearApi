@@ -3,11 +3,12 @@ using Microsoft.AspNetCore.Mvc;
 using MuuqWear.API.DTO.ProductDTO;
 using MuuqWear.API.Interfaces;
 using MuuqWear.API.Shared;
+using MuuqWear.Application.Controllers;
 
 namespace MuuqWear.API.Controllers;
 [Route("api/[controller]")]
 [ApiController]
-public class ProductController : ControllerBase
+public class ProductController : BaseController
 {
     private readonly IProductService _productService;
 
@@ -57,7 +58,7 @@ public class ProductController : ControllerBase
         if (!response.Success)
             return BadRequest(response);
 
-        return Ok(response);
+        return HandleResponse(response);
     }
 
     [HttpGet("home")]
@@ -66,7 +67,7 @@ public class ProductController : ControllerBase
         var response = await _productService.GetHomeProducts();
         if (!response.Success)
             return BadRequest(response);
-        return Ok(response);
+        return HandleResponse(response);
     }
 
 
@@ -77,7 +78,7 @@ public class ProductController : ControllerBase
         var response = await _productService.Add(request);
         if (!response.Success)
             return BadRequest(response);
-        return Ok(response);
+        return HandleResponse(response);
     }
 
     [HttpPost("upload-image")]
@@ -89,7 +90,7 @@ public class ProductController : ControllerBase
         var response = await _productService.UploadImage(file);
         if (!response.Success)
             return BadRequest(response);
-        return Ok(response);
+        return HandleResponse(response);
     }
 
     [HttpPut("update/{id}")]
@@ -98,7 +99,7 @@ public class ProductController : ControllerBase
         var response = await _productService.Update(id, request);
         if (!response.Success)
             return BadRequest(response);
-        return Ok(response);
+        return HandleResponse(response);
     }
 
     [HttpDelete("delete/{id}")]
@@ -107,7 +108,7 @@ public class ProductController : ControllerBase
         var response = await _productService.Delete(id);
         if (!response.Success)
             return BadRequest(response);
-        return Ok(response);
+        return HandleResponse(response);
     }
 
     [HttpGet("{id}")]
@@ -123,7 +124,7 @@ public class ProductController : ControllerBase
         if (!response.Success)
             return NotFound(response); // 404 if product not found 
 
-        return Ok(response);
+        return HandleResponse(response);
     }
 
     [HttpGet("{id}/related")]
@@ -145,7 +146,7 @@ public class ProductController : ControllerBase
         if (!response.Success)
             return BadRequest(response);
 
-        return Ok(response);
+        return HandleResponse(response);
     }
 
     [HttpPost("images/add")]
@@ -160,7 +161,7 @@ public class ProductController : ControllerBase
         var response = await _productService.AddProductImage(request);
         if (!response.Success)
             return BadRequest(response);
-        return Ok(response);
+        return HandleResponse(response);
     }
 
     [HttpDelete("images/{imageId}")]
@@ -172,6 +173,6 @@ public class ProductController : ControllerBase
         var response = await _productService.DeleteProductImage(imageId);
         if (!response.Success)
             return BadRequest(response);
-        return Ok(response);
+        return HandleResponse(response);
     }
 }

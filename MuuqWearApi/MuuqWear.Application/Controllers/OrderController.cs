@@ -10,7 +10,7 @@ namespace MuuqWear.Application.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize] // ✅ all endpoints require JWT
-public class OrderController : ControllerBase
+public class OrderController : BaseController
 {
     private readonly IOrderService _orderService;
 
@@ -19,14 +19,6 @@ public class OrderController : ControllerBase
         _orderService = orderService;
     }
 
-    // get userId from JWT ✅
-    private Guid? GetUserId()
-    {
-        var sub = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrEmpty(sub)) return null;
-        if (Guid.TryParse(sub, out var userId)) return userId;
-        return null;
-    }
 
     // =============================================
     // PLACE ORDER
@@ -37,18 +29,18 @@ public class OrderController : ControllerBase
         [FromBody] PlaceOrderDTO request)
     {
         var userId = GetUserId();
-        if (userId == null)
+        if (userId == Guid.Empty)
             return StatusCode(401, Response<OrderDTO>.Fail("Not authenticated"));
 
         // validate email ✅
         if (string.IsNullOrWhiteSpace(request.Email))
             return BadRequest(Response<OrderDTO>.Fail("Email is required"));
 
-        var response = await _orderService.PlaceOrder(userId.Value, request);
+        var response = await _orderService.PlaceOrder(userId, request);
         if (!response.Success)
             return BadRequest(response);
 
-        return Ok(response);
+        return HandleResponse(response);
     }
 
     // =============================================
@@ -59,17 +51,17 @@ public class OrderController : ControllerBase
     public async Task<ActionResult<Response<OrderDTO>>> GetOrder(Guid orderId)
     {
         var userId = GetUserId();
-        if (userId == null)
+        if (userId == Guid.Empty)
             return StatusCode(401, Response<OrderDTO>.Fail("Not authenticated"));
 
         if (orderId == Guid.Empty)
             return BadRequest(Response<OrderDTO>.Fail("Invalid order id"));
 
-        var response = await _orderService.GetOrder(orderId, userId.Value);
+        var response = await _orderService.GetOrder(orderId, userId);
         if (!response.Success)
             return NotFound(response);
 
-        return Ok(response);
+        return HandleResponse(response);
     }
 
     // =============================================
@@ -80,13 +72,13 @@ public class OrderController : ControllerBase
     public async Task<ActionResult<Response<List<OrderDTO>>>> GetUserOrders()
     {
         var userId = GetUserId();
-        if (userId == null)
+        if (userId == Guid.Empty)
             return StatusCode(401, Response<List<OrderDTO>>.Fail("Not authenticated"));
 
-        var response = await _orderService.GetUserOrders(userId.Value);
+        var response = await _orderService.GetUserOrders(userId);
         if (!response.Success)
             return BadRequest(response);
 
-        return Ok(response);
+        return HandleResponse(response);
     }
 }

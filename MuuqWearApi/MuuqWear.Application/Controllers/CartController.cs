@@ -9,7 +9,7 @@ namespace MuuqWear.Application.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
-public class CartController : ControllerBase
+public class CartController : BaseController
 {
     private readonly ICartService _cartService;
 
@@ -18,19 +18,6 @@ public class CartController : ControllerBase
         _cartService = cartService;
     }
 
-    // =============================================
-    // HELPER — get user id from cookie claims 
-    // =============================================
-    private Guid? GetUserId()
-    {
-        // .NET maps "sub" to NameIdentifier 
-        var sub = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-
-        if (string.IsNullOrEmpty(sub)) return null;
-        if (Guid.TryParse(sub, out var userId)) return userId;
-        return null;
-    }
-    // =============================================
     // GET CART
     // GET api/Cart
     // =============================================
@@ -38,14 +25,14 @@ public class CartController : ControllerBase
     public async Task<ActionResult<Response<CartDTO>>> GetCart()
     {
         var userId = GetUserId();
-        if (userId == null)
+        if (userId == Guid.Empty)
             return StatusCode(401, Response<CartDTO>.Fail("Not authenticated"));
 
-        var response = await _cartService.GetCart(userId.Value);
+        var response = await _cartService.GetCart(userId);
         if (!response.Success)
             return BadRequest(response);
 
-        return Ok(response);
+        return HandleResponse(response);
     }
 
     [HttpPost("add")]
@@ -53,7 +40,7 @@ public class CartController : ControllerBase
         [FromBody] AddCartItemDTO request)
     {
         var userId = GetUserId();
-        if (userId == null)
+        if (userId == Guid.Empty)
             return StatusCode(401, Response<CartDTO>.Fail("Not authenticated"));
 
         if (request.ProductId == Guid.Empty)
@@ -65,11 +52,11 @@ public class CartController : ControllerBase
         if (request.Quantity < 1)
             return BadRequest(Response<CartDTO>.Fail("Quantity must be at least 1"));
 
-        var response = await _cartService.AddItem(userId.Value, request);
+        var response = await _cartService.AddItem(userId, request);
         if (!response.Success)
             return BadRequest(response);
 
-        return Ok(response);
+        return HandleResponse(response);
     }
 
     [HttpPut("update")]
@@ -77,7 +64,7 @@ public class CartController : ControllerBase
         [FromBody] UpdateCartItemDTO request)
     {
         var userId = GetUserId();
-        if (userId == null)
+        if (userId == Guid.Empty)
             return StatusCode(401, Response<CartDTO>.Fail("Not authenticated"));
         if (request.CartItemId == Guid.Empty)
             return BadRequest(Response<CartDTO>.Fail("Invalid cart item"));
@@ -85,42 +72,42 @@ public class CartController : ControllerBase
         if (request.Quantity < 1)
             return BadRequest(Response<CartDTO>.Fail("Quantity must be at least 1"));
 
-        var response = await _cartService.UpdateQuantity(userId.Value, request);
+        var response = await _cartService.UpdateQuantity(userId, request);
         if (!response.Success)
             return BadRequest(response);
 
-        return Ok(response);
+        return HandleResponse(response);
     }
 
     [HttpDelete("remove/{cartItemId}")]
     public async Task<ActionResult<Response<CartDTO>>> RemoveItem(Guid cartItemId)
     {
         var userId = GetUserId();
-        if (userId == null)
+        if (userId == Guid.Empty)
             return StatusCode(401, Response<CartDTO>.Fail("Not authenticated"));
 
         if (cartItemId == Guid.Empty)
             return BadRequest(Response<CartDTO>.Fail("Invalid cart item"));
 
-        var response = await _cartService.RemoveItem(userId.Value, cartItemId);
+        var response = await _cartService.RemoveItem(userId, cartItemId);
         if (!response.Success)
             return BadRequest(response);
 
-        return Ok(response);
+        return HandleResponse(response);
     }
 
     [HttpDelete("clear")]
     public async Task<ActionResult<Response<CartDTO>>> ClearCart()
     {
         var userId = GetUserId();
-        if (userId == null)
+        if (userId == Guid.Empty)
             return StatusCode(401, Response<CartDTO>.Fail("Not authenticated"));
 
-        var response = await _cartService.ClearCart(userId.Value);
+        var response = await _cartService.ClearCart(userId);
         if (!response.Success)
             return BadRequest(response);
 
-        return Ok(response);
+        return HandleResponse(response);
     }
 
     [HttpPost("merge")]
@@ -128,20 +115,20 @@ public class CartController : ControllerBase
         [FromBody] List<AddCartItemDTO> guestItems)
     {
         var userId = GetUserId();
-        if (userId == null)
+        if (userId == Guid.Empty)
             return StatusCode(401, Response<CartDTO>.Fail("Not authenticated"));
 
         if (guestItems == null || !guestItems.Any())
         {
-            var cart = await _cartService.GetCart(userId.Value);
+            var cart = await _cartService.GetCart(userId);
             return Ok(cart);
         }
 
-        var response = await _cartService.MergeCart(userId.Value, guestItems);
+        var response = await _cartService.MergeCart(userId, guestItems);
         if (!response.Success)
             return BadRequest(response);
 
-        return Ok(response);
+        return HandleResponse(response);
     }
 
     [HttpGet("test-auth")]

@@ -4,13 +4,14 @@ using MuuqWear.API.DTO;
 using MuuqWear.API.DTO.AuthDTO;
 using MuuqWear.API.Interfaces;
 using MuuqWear.API.Shared;
+using MuuqWear.Application.Controllers;
 using MuuqWear.Model.DTO.AuthDTO;
 
 namespace MuuqWear.API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class AuthController : ControllerBase
+    public class AuthController : BaseController
     {
         private readonly IAuthService _authService;
 
@@ -26,7 +27,7 @@ namespace MuuqWear.API.Controllers
             if (!response.Success)
                 return BadRequest(response);
 
-            return Ok(response);
+            return HandleResponse(response);
         }
 
         [HttpPost("verifyotp")]
@@ -36,7 +37,7 @@ namespace MuuqWear.API.Controllers
             if (!response.Success)
                 return BadRequest(response);
 
-            return Ok(response);
+            return HandleResponse(response);
         }
 
         [HttpPost("login")]
@@ -46,7 +47,7 @@ namespace MuuqWear.API.Controllers
             if (!response.Success)
                 return BadRequest(response);
 
-            return Ok(response);
+            return HandleResponse(response);
         }
 
         [HttpPost("logout")]
@@ -57,7 +58,7 @@ namespace MuuqWear.API.Controllers
 
             if (!response.Success)
                 return BadRequest(response);
-            return Ok(response);
+            return HandleResponse(response);
         }
 
         [HttpPost("magic-link")]
@@ -73,7 +74,7 @@ namespace MuuqWear.API.Controllers
             if (!response.Success)
                 return BadRequest(response);
 
-            return Ok(response);
+            return HandleResponse(response);
         }
 
         [HttpPost("verify-magic-link")]
@@ -89,7 +90,7 @@ namespace MuuqWear.API.Controllers
             if (!response.Success)
                 return BadRequest(response);
 
-            return Ok(response);
+            return HandleResponse(response);
         }
 
         [HttpGet("google-signin-url")]
@@ -100,7 +101,7 @@ namespace MuuqWear.API.Controllers
             if (!response.Success)
                 return BadRequest(response);
 
-            return Ok(response);
+            return HandleResponse(response);
         }
 
         [HttpPost("forgot-password")]
@@ -116,7 +117,7 @@ namespace MuuqWear.API.Controllers
             if (!response.Success)
                 return BadRequest(response);
 
-            return Ok(response);
+            return HandleResponse(response);
         }
 
         [HttpPost("reset-password")]
@@ -141,11 +142,11 @@ namespace MuuqWear.API.Controllers
             if (!response.Success)
                 return BadRequest(response);
 
-            return Ok(response);
+            return HandleResponse(response);
         }
 
         [HttpPost("refresh-token")]
-        public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
+        public async Task<ActionResult<Response<AuthResponseDTO>>> RefreshToken([FromBody] RefreshTokenRequest request)
         {
             if (string.IsNullOrWhiteSpace(request.RefreshToken))
                 return BadRequest(Response<AuthResponseDTO>.Fail("Refresh token is required"));
@@ -155,7 +156,7 @@ namespace MuuqWear.API.Controllers
             if (!response.Success)
                 return BadRequest(response);
 
-            return Ok(response);
+            return HandleResponse(response);
         }
     }
 

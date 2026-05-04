@@ -6,6 +6,8 @@ using MuuqWear.Application.Interfaces;
 using MuuqWear.Application.Service;
 using Supabase;
 using System.Text;
+using ContentService = MuuqWear.API.Service.ContentService;
+
 
 var builder = WebApplication.CreateBuilder(args);
 var url = builder.Configuration["SupaBase:Url"];
@@ -22,6 +24,7 @@ builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IAddressService, AddressService>();
 builder.Services.AddScoped<IProfileService, ProfileService>();
+builder.Services.AddScoped<IContentService, ContentService>();
 // Add services to the container.
 
 builder.Services.AddControllers();

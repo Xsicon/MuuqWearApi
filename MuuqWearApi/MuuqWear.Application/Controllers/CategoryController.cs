@@ -2,11 +2,12 @@
 using MuuqWear.API.DTO.ProductDTO;
 using MuuqWear.API.Interfaces;
 using MuuqWear.API.Shared;
+using MuuqWear.Application.Controllers;
 
 namespace MuuqWear.API.Controllers;
 [Route("api/[controller]")]
 [ApiController]
-public class CategoryController : ControllerBase
+public class CategoryController : BaseController
 {
     private readonly ICategoryService _categoryService;
 
@@ -21,7 +22,7 @@ public class CategoryController : ControllerBase
         var response = await _categoryService.GetAll();
         if (!response.Success)
             return BadRequest(response);
-        return Ok(response);
+        return HandleResponse(response);
     }
 
     [HttpPost("add")]
@@ -30,6 +31,6 @@ public class CategoryController : ControllerBase
         var response = await _categoryService.Add(request);
         if (!response.Success)
             return BadRequest(response);
-        return Ok(response);
+        return HandleResponse(response);
     }
 }
