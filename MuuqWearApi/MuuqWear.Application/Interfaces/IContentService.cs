@@ -28,4 +28,6 @@ public interface IContentService
     // unpublish item
     Task<Response<ContentItemDTO>> Unpublish(ContentCategory type, Guid id);
     Task<Response<string>> UploadImage(IFormFile file);
+    Task<Response<PaginatedResponse<ContentItemDTO>>> GetPublished(
+    int page, int pageSize, string? category = null);
 }

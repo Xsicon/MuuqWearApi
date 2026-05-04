@@ -56,6 +56,7 @@ public class ProductService : IProductService
                 .Deserialize<List<ProductDTO>>(
                     dataResult.Content ?? "[]", options)
                 ?? new List<ProductDTO>();
+            var totalPages = (int)Math.Ceiling((double)totalCount / filter.PageSize);
 
             // Step 6 — build paginated response
             var paginatedResponse = new PaginatedResponse<ProductDTO>
@@ -63,7 +64,9 @@ public class ProductService : IProductService
                 Data = products,
                 TotalCount = totalCount,
                 Page = filter.Page,
-                PageSize = filter.PageSize
+                PageSize = filter.PageSize,
+                TotalPages = totalPages,                    // ← add
+
             };
 
             return Response<PaginatedResponse<ProductDTO>>

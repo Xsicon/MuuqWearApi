@@ -17,19 +17,19 @@ public class JournalController : BaseController
     }
 
     // ─── GET ALL PUBLISHED ────────────────────────────────────
+
     [HttpGet]
-    public async Task<ActionResult<Response<List<ContentItemDTO>>>> GetPublished()
+    public async Task<ActionResult<Response<PaginatedResponse<ContentItemDTO>>>> GetPublished(
+    [FromQuery] int page = 1,
+    [FromQuery] int pageSize = 6,
+    [FromQuery] string? category = null)
     {
-        var result = await _contentService.GetAll(ContentCategory.JournalArticles);
+        if (page < 1) page = 1;
+        if (pageSize < 1 || pageSize > 50) pageSize = 6;
+
+        var result = await _contentService.GetPublished(page, pageSize, category);
         if (!result.Success) return BadRequest(result);
-
-        // ✅ filter published only — public endpoint
-        var published = result.Data?
-            .Where(x => x.Status == "published")
-            .ToList() ?? new();
-
-        return Ok(Response<List<ContentItemDTO>>.SuccessResponse(
-            published, "Articles fetched"));
+        return Ok(result);
     }
 
     // ─── GET SINGLE PUBLISHED ─────────────────────────────────

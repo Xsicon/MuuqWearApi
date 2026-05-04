@@ -580,4 +580,66 @@ public class ContentService : IContentService
             return Response<string>.Fail("Error: " + ex.Message);
         }
     }
+
+    // =============================================
+    // GET PUBLISHED (paginated + filtered)
+    // =============================================
+    public async Task<Response<PaginatedResponse<ContentItemDTO>>> GetPublished(
+        int page, int pageSize, string? category = null)
+    {
+        try
+        {
+            // build query
+            var query = _client.From<JournalArticle>()
+                .Filter("status", Supabase.Postgrest.Constants.Operator.Equals,
+                    "published");
+
+            // apply category filter if provided
+            if (!string.IsNullOrEmpty(category))
+                query = query.Filter("category",
+                    Supabase.Postgrest.Constants.Operator.Equals, category);
+
+            // get total count first
+            var countResult = await query.Get();
+            var totalCount = countResult.Models.Count;
+
+            // apply pagination
+            var offset = (page - 1) * pageSize;
+            var result = await query
+                .Order("published_at", Supabase.Postgrest.Constants.Ordering.Descending)
+                .Range(offset, offset + pageSize - 1)
+                .Get();
+
+            var items = result.Models.Select(x => new ContentItemDTO
+            {
+                Id = x.Id,
+                Title = x.Title,
+                Content = x.Content,
+                Category = x.Category,
+                ImageUrl = x.ImageUrl,
+                Status = x.Status,
+                Views = x.Views,
+                CreatedAt = x.CreatedAt,
+                PublishedAt = x.PublishedAt
+            }).ToList();
+
+            var totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
+
+            var pagedResult = new PaginatedResponse<ContentItemDTO>
+            {
+                Data = items,
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize,
+                HasMore = page < totalPages
+            };
+
+            return Response<PaginatedResponse<ContentItemDTO>>.SuccessResponse(
+                pagedResult, "Articles fetched");
+        }
+        catch (Exception ex)
+        {
+            return Response<PaginatedResponse<ContentItemDTO>>.Fail("Error: " + ex.Message);
+        }
+    }
 }

@@ -90,5 +90,20 @@ public class ContentController : BaseController
         var result = await _contentService.UploadImage(file);
         return HandleResponse(result);
     }
+
+    [HttpGet]
+    public async Task<ActionResult<Response<PaginatedResponse<ContentItemDTO>>>> GetPublished(
+    [FromQuery] int page = 1,
+    [FromQuery] int pageSize = 6,
+    [FromQuery] string? category = null)
+    {
+        // validate
+        if (page < 1) page = 1;
+        if (pageSize < 1 || pageSize > 50) pageSize = 6;
+
+        var result = await _contentService.GetPublished(page, pageSize, category);
+        if (!result.Success) return BadRequest(result);
+        return Ok(result);
+    }
 }
 
