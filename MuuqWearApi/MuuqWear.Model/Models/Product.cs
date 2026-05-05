@@ -43,12 +43,16 @@ public class Product : BaseModel
     [Column("description")]
     public string? Description { get; set; }
 
-    [Column("sizes")]
-    public string? Sizes { get; set; }
-
     [Column("gender")]
     public string? Gender { get; set; }
 
     [Column("category_id")]
     public Guid? CategoryId { get; set; }
+    [Column("sku")]
+    public string? Sku { get; set; }
+    [Column("is_deleted")]
+    public bool IsDeleted { get; set; } = false;
+
+    [Column("deleted_at")]
+    public DateTime? DeletedAt { get; set; }
 }

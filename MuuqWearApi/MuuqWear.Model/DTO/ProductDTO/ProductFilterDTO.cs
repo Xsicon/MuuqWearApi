@@ -10,10 +10,9 @@ public class ProductFilterDTO
 
     // filters
     public Guid? CategoryId { get; set; }
-    public string? Sizes { get; set; }
     public decimal? MinPrice { get; set; }
     public decimal? MaxPrice { get; set; }
-
+    public string? Sizes { get; set; }
     // sorting
     public string? SortBy { get; set; } = "featured";
 }

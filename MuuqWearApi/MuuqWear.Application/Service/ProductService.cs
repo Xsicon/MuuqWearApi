@@ -3,6 +3,7 @@ using MuuqWear.API.DTO.ProductDTO;
 using MuuqWear.API.Interfaces;
 using MuuqWear.API.Models;
 using MuuqWear.API.Shared;
+using MuuqWear.Model.Models;
 using Supabase;
 using Supabase.Postgrest;
 using static Supabase.Postgrest.Constants;
@@ -22,30 +23,23 @@ public class ProductService : IProductService
     {
         try
         {
-            // Step 1 — build base parameters
             var baseParams = BuildFilterParameters(filter);
 
-            // Step 2 — get count via RPC
             var countResult = await _client.Rpc("get_products_count", baseParams);
-
             var totalCount = 0;
             if (!int.TryParse(countResult.Content?.Trim('"'), out totalCount))
                 totalCount = 0;
 
-            // Step 3 — calculate offset
             var offset = (filter.Page - 1) * filter.PageSize;
-
-            // Step 4 — fetch via get_products RPC
             var dataParams = new Dictionary<string, object>(baseParams)
         {
-            { "p_sort_by", filter.SortBy ?? "newest" },
+            { "p_sort_by",   filter.SortBy ?? "newest" },
             { "p_page_size", filter.PageSize },
-            { "p_offset", offset }
+            { "p_offset",    offset }
         };
 
             var dataResult = await _client.Rpc("get_products", dataParams);
 
-            // Step 5 — deserialize
             var options = new System.Text.Json.JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
@@ -56,17 +50,28 @@ public class ProductService : IProductService
                 .Deserialize<List<ProductDTO>>(
                     dataResult.Content ?? "[]", options)
                 ?? new List<ProductDTO>();
+
+            // ✅ fetch size stock for all products in one query
+            var productIds = products.Select(p => p.Id).ToList();
+            var sizeStockMap = await FetchSizeStock(productIds);
+
+            // ✅ attach size stock to each product
+            foreach (var product in products)
+            {
+                if (sizeStockMap.TryGetValue(product.Id, out var sizeStock))
+                    product.SizeStock = sizeStock;
+            }
+
             var totalPages = (int)Math.Ceiling((double)totalCount / filter.PageSize);
 
-            // Step 6 — build paginated response
             var paginatedResponse = new PaginatedResponse<ProductDTO>
             {
                 Data = products,
                 TotalCount = totalCount,
                 Page = filter.Page,
                 PageSize = filter.PageSize,
-                TotalPages = totalPages,                    // ← add
-
+                TotalPages = totalPages,
+                HasMore = filter.Page < totalPages
             };
 
             return Response<PaginatedResponse<ProductDTO>>
@@ -101,31 +106,32 @@ public class ProductService : IProductService
             // only active products
             // ordered by newest first
             var newArrivalsResult = await _client
-                .From<Product>()
-                .Filter("is_new_arrival", Supabase.Postgrest.Constants.Operator.Equals, "true")
-                .Filter("is_active", Supabase.Postgrest.Constants.Operator.Equals, "true")
-                .Order("created_at", Supabase.Postgrest.Constants.Ordering.Descending)
-                .Range(0, 5) // 6 products (0 to 5)
-                .Get();
+      .From<Product>()
+      .Filter("is_new_arrival", Supabase.Postgrest.Constants.Operator.Equals, "true")
+      .Filter("is_active", Supabase.Postgrest.Constants.Operator.Equals, "true")
+      .Filter("is_deleted", Supabase.Postgrest.Constants.Operator.Equals, "false") // ← add
+      .Order("created_at", Supabase.Postgrest.Constants.Ordering.Descending)
+      .Range(0, 5)
+      .Get();
 
             // fetch 6 featured products
             var featuredResult = await _client
-                .From<Product>()
-                .Filter("is_featured", Supabase.Postgrest.Constants.Operator.Equals, "true")
-                .Filter("is_active", Supabase.Postgrest.Constants.Operator.Equals, "true")
-                .Order("created_at", Supabase.Postgrest.Constants.Ordering.Descending)
-                .Range(0, 5)
-                .Get();
+     .From<Product>()
+     .Filter("is_featured", Supabase.Postgrest.Constants.Operator.Equals, "true")
+     .Filter("is_active", Supabase.Postgrest.Constants.Operator.Equals, "true")
+     .Filter("is_deleted", Supabase.Postgrest.Constants.Operator.Equals, "false") // ← add
+     .Order("created_at", Supabase.Postgrest.Constants.Ordering.Descending)
+     .Range(0, 5)
+     .Get();
 
-            // fetch 6 best sellers
             var bestSellersResult = await _client
-                .From<Product>()
-                .Filter("is_best_seller", Supabase.Postgrest.Constants.Operator.Equals, "true")
-                .Filter("is_active", Supabase.Postgrest.Constants.Operator.Equals, "true")
-                .Order("created_at", Supabase.Postgrest.Constants.Ordering.Descending)
-                .Range(0, 5)
-                .Get();
-
+     .From<Product>()
+     .Filter("is_best_seller", Supabase.Postgrest.Constants.Operator.Equals, "true")
+     .Filter("is_active", Supabase.Postgrest.Constants.Operator.Equals, "true")
+     .Filter("is_deleted", Supabase.Postgrest.Constants.Operator.Equals, "false") // ← add
+     .Order("created_at", Supabase.Postgrest.Constants.Ordering.Descending)
+     .Range(0, 5)
+     .Get();
             // map to DTOs
             var homeProducts = new HomeProductsDTO
             {
@@ -202,7 +208,6 @@ public class ProductService : IProductService
                 IsFeatured = request.IsFeatured,
                 IsBestSeller = request.IsBestSeller,
                 Description = request.Description,
-                Sizes = request.Sizes,
                 Gender = request.Gender,
                 CategoryId = request.CategoryId,
                 CreatedAt = DateTime.UtcNow
@@ -213,9 +218,50 @@ public class ProductService : IProductService
                 .Insert(product);
 
             var inserted = result.Models.FirstOrDefault();
-
             if (inserted == null)
                 return Response<ProductDTO>.Fail("Failed to add product");
+
+            // ✅ auto-generate SKU from product id
+            var sku = $"MQ-{inserted.Id.ToString().Substring(0, 6).ToUpper()}";
+            await _client
+                .From<Product>()
+                .Filter("id", Supabase.Postgrest.Constants.Operator.Equals,
+                    inserted.Id.ToString())
+                .Set(p => p.Sku!, sku)
+                .Update();
+
+            inserted.Sku = sku;
+
+            // ✅ insert size stock rows if sizes provided
+            var sizeStock = new List<SizeStockDTO>();
+            if (request.Sizes.Any())
+            {
+                var totalSizes = request.Sizes.Count;
+                var baseQty = request.Stock / totalSizes;
+                var remainder = request.Stock % totalSizes;
+
+                var sizeStockRows = request.Sizes.Select((size, index) =>
+                    new ProductSizeStock
+                    {
+                        Id = Guid.NewGuid(),
+                        ProductId = inserted.Id,
+                        Size = size,
+                        Quantity = index == 0
+                            ? baseQty + remainder
+                            : baseQty
+                    }).ToList();
+
+                var sizeResult = await _client
+                    .From<ProductSizeStock>()
+                    .Insert(sizeStockRows);
+
+                sizeStock = sizeResult.Models.Select(x => new SizeStockDTO
+                {
+                    Id = x.Id,
+                    Size = x.Size,
+                    Quantity = x.Quantity
+                }).ToList();
+            }
 
             var productDTO = new ProductDTO
             {
@@ -232,12 +278,14 @@ public class ProductService : IProductService
                 IsFeatured = inserted.IsFeatured,
                 IsBestSeller = inserted.IsBestSeller,
                 Description = inserted.Description,
-                Sizes = inserted.Sizes,
                 Gender = inserted.Gender,
-                CategoryId = inserted.CategoryId
+                CategoryId = inserted.CategoryId,
+                Sku = inserted.Sku,   // ← add
+                SizeStock = sizeStock        // ← add
             };
 
-            return Response<ProductDTO>.SuccessResponse(productDTO, "Product added successfully");
+            return Response<ProductDTO>.SuccessResponse(
+                productDTO, "Product added successfully");
         }
         catch (Exception ex)
         {
@@ -292,7 +340,6 @@ public class ProductService : IProductService
                 .Set(p => p.IsFeatured, request.IsFeatured)
                 .Set(p => p.IsBestSeller, request.IsBestSeller)
                 .Set(p => p.Description!, request.Description)
-                .Set(p => p.Sizes!, request.Sizes)
                 .Set(p => p.Gender!, request.Gender)
                 .Set(p => p.CategoryId!, request.CategoryId)
                 .Update();
@@ -317,7 +364,6 @@ public class ProductService : IProductService
                 IsFeatured = updated.IsFeatured,
                 IsBestSeller = updated.IsBestSeller,
                 Description = updated.Description,
-                Sizes = updated.Sizes,
                 Gender = updated.Gender,
                 CategoryId = updated.CategoryId
             };
@@ -335,9 +381,13 @@ public class ProductService : IProductService
         try
         {
             await _client
-                .From<Product>()
-                .Where(p => p.Id == id)
-                .Delete();
+             .From<Product>()
+             .Filter("id", Supabase.Postgrest.Constants.Operator.Equals,
+                 id.ToString())
+             .Set(p => p.IsDeleted, true)
+             .Set(p => p.DeletedAt!, DateTime.UtcNow)
+             .Update();
+
 
             return Response<bool>.SuccessResponse(true, "Product deleted successfully");
         }
@@ -352,22 +402,21 @@ public class ProductService : IProductService
         try
         {
             var productResult = await _client
-    .From<Product>()
-    .Filter("id", Supabase.Postgrest.Constants.Operator.Equals, id.ToString())
-    .Single();
+     .From<Product>()
+     .Filter("id", Supabase.Postgrest.Constants.Operator.Equals, id.ToString())
+     .Filter("is_deleted", Supabase.Postgrest.Constants.Operator.Equals, "false") // ← add
+     .Single();
 
-            // if product not found → return fail
-            // Single() returns null if no match
             if (productResult == null)
                 return Response<ProductDTO>.Fail("Product not found");
 
             var imagesResult = await _client
-           .From<ProductImage>()
-           .Filter("product_id", Supabase.Postgrest.Constants.Operator.Equals, id.ToString())
-           .Order("sort_order", Supabase.Postgrest.Constants.Ordering.Ascending)
-           .Get();
+                .From<ProductImage>()
+                .Filter("product_id",
+                    Supabase.Postgrest.Constants.Operator.Equals, id.ToString())
+                .Order("sort_order", Supabase.Postgrest.Constants.Ordering.Ascending)
+                .Get();
 
-            // Step 3 — map images to DTOs
             var images = imagesResult.Models.Select(img => new ProductImageDTO
             {
                 Id = img.Id,
@@ -376,6 +425,11 @@ public class ProductService : IProductService
                 SortOrder = img.SortOrder
             }).ToList();
 
+            // ✅ fetch size stock for this product
+            var sizeStockMap = await FetchSizeStock(new List<Guid> { id });
+            var sizeStock = sizeStockMap.TryGetValue(id, out var stock)
+                ? stock
+                : new List<SizeStockDTO>();
 
             var productDTO = new ProductDTO
             {
@@ -391,13 +445,15 @@ public class ProductService : IProductService
                 IsFeatured = productResult.IsFeatured,
                 IsBestSeller = productResult.IsBestSeller,
                 CategoryId = productResult.CategoryId,
-                Sizes = productResult.Sizes,
                 Gender = productResult.Gender,
                 Description = productResult.Description,
+                Sku = productResult.Sku,        // ← add
+                SizeStock = sizeStock,                // ← add
                 Images = images
             };
 
-            return Response<ProductDTO>.SuccessResponse(productDTO, "Product fetched successfully");
+            return Response<ProductDTO>.SuccessResponse(
+                productDTO, "Product fetched successfully");
         }
         catch (Exception ex)
         {
@@ -421,6 +477,7 @@ public class ProductService : IProductService
      .Filter("id",
          Supabase.Postgrest.Constants.Operator.NotEqual,
          productId.ToString())
+     .Filter("is_deleted", Supabase.Postgrest.Constants.Operator.Equals, "false")
      .Filter("is_active",
          Supabase.Postgrest.Constants.Operator.Equals,
          "true")
@@ -451,6 +508,8 @@ public class ProductService : IProductService
                         .Filter("is_active",
                             Supabase.Postgrest.Constants.Operator.Equals,
                             "true")
+                        .Filter("is_deleted", Supabase.Postgrest.Constants.Operator.Equals,
+                        "false")
                         .Order("created_at",
                             Supabase.Postgrest.Constants.Ordering.Descending)
                         .Limit(remaining)
@@ -545,6 +604,181 @@ public class ProductService : IProductService
                 .Delete();
 
             return Response<bool>.SuccessResponse(true, "Image deleted successfully");
+        }
+        catch (Exception ex)
+        {
+            return Response<bool>.Fail("Error: " + ex.Message);
+        }
+    }
+
+    private async Task<Dictionary<Guid, List<SizeStockDTO>>> FetchSizeStock(
+    List<Guid> productIds)
+    {
+        if (!productIds.Any())
+            return new Dictionary<Guid, List<SizeStockDTO>>();
+
+        var result = await _client
+            .From<ProductSizeStock>()
+            .Filter("product_id",
+                Supabase.Postgrest.Constants.Operator.In,
+                productIds.Select(id => id.ToString()).ToList())
+            .Order("size", Supabase.Postgrest.Constants.Ordering.Ascending)
+            .Get();
+
+        // group by product_id → Dictionary<productId, List<SizeStockDTO>>
+        return result.Models
+            .GroupBy(x => x.ProductId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(x => new SizeStockDTO
+                {
+                    Id = x.Id,
+                    Size = x.Size,
+                    Quantity = x.Quantity
+                }).ToList()
+            );
+    }
+
+    public async Task<Response<List<SizeStockDTO>>> GetSizeStock(Guid productId)
+    {
+        try
+        {
+            var result = await _client
+                .From<ProductSizeStock>()
+                .Filter("product_id",
+                    Supabase.Postgrest.Constants.Operator.Equals,
+                    productId.ToString())
+                .Order("size", Supabase.Postgrest.Constants.Ordering.Ascending)
+                .Get();
+
+            var sizeStock = result.Models.Select(x => new SizeStockDTO
+            {
+                Id = x.Id,
+                Size = x.Size,
+                Quantity = x.Quantity
+            }).ToList();
+
+            return Response<List<SizeStockDTO>>
+                .SuccessResponse(sizeStock, "Size stock fetched");
+        }
+        catch (Exception ex)
+        {
+            return Response<List<SizeStockDTO>>.Fail("Error: " + ex.Message);
+        }
+    }
+
+    // =============================================
+    // UPDATE SIZE STOCK
+    // =============================================
+    public async Task<Response<SizeStockDTO>> UpdateSizeStock(
+        Guid sizeStockId, int quantity)
+    {
+        try
+        {
+            if (quantity < 0)
+                return Response<SizeStockDTO>.Fail("Quantity cannot be negative");
+
+            var result = await _client
+                .From<ProductSizeStock>()
+                .Filter("id",
+                    Supabase.Postgrest.Constants.Operator.Equals,
+                    sizeStockId.ToString())
+                .Set(x => x.Quantity, quantity)
+                .Update();
+
+            var updated = result.Models.FirstOrDefault();
+            if (updated == null)
+                return Response<SizeStockDTO>.Fail("Size stock not found");
+
+            return Response<SizeStockDTO>.SuccessResponse(new SizeStockDTO
+            {
+                Id = updated.Id,
+                Size = updated.Size,
+                Quantity = updated.Quantity
+            }, "Size stock updated");
+        }
+        catch (Exception ex)
+        {
+            return Response<SizeStockDTO>.Fail("Error: " + ex.Message);
+        }
+    }
+
+    public async Task<Response<ProductDTO>> UpdateStock(Guid productId, int stock)
+    {
+        try
+        {
+            var result = await _client
+                .From<Product>()
+                .Filter("id", Supabase.Postgrest.Constants.Operator.Equals,
+                    productId.ToString())
+                .Set(p => p.Stock, stock)
+                .Update();
+
+            var updated = result.Models.FirstOrDefault();
+            if (updated == null)
+                return Response<ProductDTO>.Fail("Product not found");
+
+            return Response<ProductDTO>.SuccessResponse(new ProductDTO
+            {
+                Id = updated.Id,
+                Stock = updated.Stock
+            }, "Stock updated");
+        }
+        catch (Exception ex)
+        {
+            return Response<ProductDTO>.Fail("Error: " + ex.Message);
+        }
+    }
+
+    // =============================================
+    // ADD SIZE STOCK
+    // =============================================
+    public async Task<Response<SizeStockDTO>> AddSizeStock(
+        Guid productId, string size, int quantity)
+    {
+        try
+        {
+            var result = await _client
+                .From<ProductSizeStock>()
+                .Insert(new ProductSizeStock
+                {
+                    Id = Guid.NewGuid(),
+                    ProductId = productId,
+                    Size = size,
+                    Quantity = quantity
+                });
+
+            var inserted = result.Models.FirstOrDefault();
+            if (inserted == null)
+                return Response<SizeStockDTO>.Fail("Failed to add size");
+
+            return Response<SizeStockDTO>.SuccessResponse(new SizeStockDTO
+            {
+                Id = inserted.Id,
+                Size = inserted.Size,
+                Quantity = inserted.Quantity
+            }, "Size added");
+        }
+        catch (Exception ex)
+        {
+            return Response<SizeStockDTO>.Fail("Error: " + ex.Message);
+        }
+    }
+
+    // =============================================
+    // DELETE SIZE STOCK
+    // =============================================
+    public async Task<Response<bool>> DeleteSizeStock(Guid sizeStockId)
+    {
+        try
+        {
+            await _client
+                .From<ProductSizeStock>()
+                .Filter("id", Supabase.Postgrest.Constants.Operator.Equals,
+                    sizeStockId.ToString())
+                .Delete();
+
+            return Response<bool>.SuccessResponse(true, "Size deleted");
         }
         catch (Exception ex)
         {

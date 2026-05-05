@@ -175,4 +175,55 @@ public class ProductController : BaseController
             return BadRequest(response);
         return HandleResponse(response);
     }
+
+    // ─── GET SIZE STOCK ───────────────────────────────────────────
+    [HttpGet("{productId}/size-stock")]
+    public async Task<ActionResult<Response<List<SizeStockDTO>>>> GetSizeStock(
+        Guid productId)
+    {
+        var result = await _productService.GetSizeStock(productId);
+        if (!result.Success) return BadRequest(result);
+        return Ok(result);
+    }
+
+    // ─── UPDATE SIZE STOCK ────────────────────────────────────────
+    [HttpPatch("size-stock/{sizeStockId}")]
+    public async Task<ActionResult<Response<SizeStockDTO>>> UpdateSizeStock(
+        Guid sizeStockId,
+        [FromBody] UpdateSizeStockDTO request)
+    {
+        var result = await _productService.UpdateSizeStock(
+            sizeStockId, request.Quantity);
+        if (!result.Success) return BadRequest(result);
+        return Ok(result);
+    }
+
+    [HttpPatch("{productId}/stock")]
+    public async Task<ActionResult<Response<ProductDTO>>> UpdateStock(
+    Guid productId, [FromBody] UpdateStockDTO request)
+    {
+        var result = await _productService.UpdateStock(productId, request.Stock);
+        if (!result.Success) return BadRequest(result);
+        return Ok(result);
+    }
+
+    [HttpPost("{productId}/size-stock")]
+    public async Task<ActionResult<Response<SizeStockDTO>>> AddSizeStock(
+        Guid productId,
+        [FromBody] AddSizeStockDTO request)
+    {
+        var result = await _productService.AddSizeStock(
+            productId, request.Size, request.Quantity);
+        if (!result.Success) return BadRequest(result);
+        return Ok(result);
+    }
+
+    // ─── DELETE SIZE STOCK ────────────────────────────────────────
+    [HttpDelete("size-stock/{sizeStockId}")]
+    public async Task<ActionResult<Response<bool>>> DeleteSizeStock(Guid sizeStockId)
+    {
+        var result = await _productService.DeleteSizeStock(sizeStockId);
+        if (!result.Success) return BadRequest(result);
+        return Ok(result);
+    }
 }
