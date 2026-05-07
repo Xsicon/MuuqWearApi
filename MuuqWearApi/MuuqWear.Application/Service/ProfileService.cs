@@ -94,7 +94,7 @@ public class ProfileService : IProfileService
         try
         {
             // soft delete — just mark as deleted
-            // real data preserved for records ✅
+            // real data preserved for records 
             var result = await _client
                 .From<Profiles>()
                 .Filter("id", Supabase.Postgrest.Constants.Operator.Equals,
@@ -114,6 +114,20 @@ public class ProfileService : IProfileService
         {
             return Response<bool>.Fail("Error: " + ex.Message);
         }
+    }
+
+    // =============================================
+    // UPDATE LAST ACTIVE
+    // =============================================
+    public async Task UpdateLastActive(Guid userId)
+    {
+        await _client
+            .From<Profiles>()
+            .Filter("id",
+                Supabase.Postgrest.Constants.Operator.Equals,
+                userId.ToString())
+            .Set(p => p.LastActiveAt!, DateTime.UtcNow)
+            .Update();
     }
 
 }

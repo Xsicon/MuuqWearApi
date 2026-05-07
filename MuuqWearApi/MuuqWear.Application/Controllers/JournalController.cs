@@ -41,7 +41,7 @@ public class JournalController : BaseController
 
         if (!result.Success) return BadRequest(result);
 
-        // ✅ only return if published
+        //  only return if published
         if (result.Data?.Status != "published")
             return NotFound(Response<ContentItemDTO>.Fail("Article not found"));
 

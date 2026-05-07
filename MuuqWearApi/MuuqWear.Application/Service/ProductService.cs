@@ -51,11 +51,11 @@ public class ProductService : IProductService
                     dataResult.Content ?? "[]", options)
                 ?? new List<ProductDTO>();
 
-            // ✅ fetch size stock for all products in one query
+            //  fetch size stock for all products in one query
             var productIds = products.Select(p => p.Id).ToList();
             var sizeStockMap = await FetchSizeStock(productIds);
 
-            // ✅ attach size stock to each product
+            //  attach size stock to each product
             foreach (var product in products)
             {
                 if (sizeStockMap.TryGetValue(product.Id, out var sizeStock))
@@ -221,7 +221,7 @@ public class ProductService : IProductService
             if (inserted == null)
                 return Response<ProductDTO>.Fail("Failed to add product");
 
-            // ✅ auto-generate SKU from product id
+            //  auto-generate SKU from product id
             var sku = $"MQ-{inserted.Id.ToString().Substring(0, 6).ToUpper()}";
             await _client
                 .From<Product>()
@@ -232,7 +232,7 @@ public class ProductService : IProductService
 
             inserted.Sku = sku;
 
-            // ✅ insert size stock rows if sizes provided
+            //  insert size stock rows if sizes provided
             var sizeStock = new List<SizeStockDTO>();
             if (request.Sizes.Any())
             {
@@ -425,7 +425,7 @@ public class ProductService : IProductService
                 SortOrder = img.SortOrder
             }).ToList();
 
-            // ✅ fetch size stock for this product
+            //  fetch size stock for this product
             var sizeStockMap = await FetchSizeStock(new List<Guid> { id });
             var sizeStock = sizeStockMap.TryGetValue(id, out var stock)
                 ? stock

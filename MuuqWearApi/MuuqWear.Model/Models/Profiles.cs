@@ -22,4 +22,6 @@ public class Profiles : BaseModel
 
     [Column("deleted_at")]
     public DateTime? DeletedAt { get; set; }
+    [Column("last_active_at")]
+    public DateTime? LastActiveAt { get; set; }
 }

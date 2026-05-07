@@ -81,10 +81,33 @@ public class ProfileController : BaseController
         if (!result.Success)
             return BadRequest(Response<bool>.Fail("Profile not found"));
 
-        // ✅ return whether account is active
+        //  return whether account is active
         if (result.Data?.IsDeleted == true)
             return Ok(Response<bool>.SuccessResponse(false, "Account deleted"));
 
         return Ok(Response<bool>.SuccessResponse(true, "Account active"));
+    }
+
+    // =============================================
+    // UPDATE LAST ACTIVE
+    // POST api/Profile/last-active/{userId}
+    // internal only — called by middleware
+    // =============================================
+    [HttpPost("last-active/{userId}")]
+    [AllowAnonymous] // ← middleware has no JWT to send
+    public async Task<IActionResult> UpdateLastActive(Guid userId)
+    {
+        if (userId == Guid.Empty) return Ok(); // ← silent fail
+
+        try
+        {
+            await _profileService.UpdateLastActive(userId);
+        }
+        catch
+        {
+            //  silent fail — never crash page load
+        }
+
+        return Ok();
     }
 }

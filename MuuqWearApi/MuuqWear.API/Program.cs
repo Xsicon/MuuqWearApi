@@ -4,6 +4,7 @@ using MuuqWear.API.Interfaces;
 using MuuqWear.API.Service;
 using MuuqWear.Application.Interfaces;
 using MuuqWear.Application.Service;
+using MuuqWear.Application.Shared;
 using Supabase;
 using System.Text;
 using ContentService = MuuqWear.API.Service.ContentService;
@@ -12,6 +13,11 @@ using ContentService = MuuqWear.API.Service.ContentService;
 var builder = WebApplication.CreateBuilder(args);
 var url = builder.Configuration["SupaBase:Url"];
 var key = builder.Configuration["Authentication:SupabaseApiKey"];
+var serviceRoleKey = builder.Configuration["Supabase:ServiceRoleKey"];
+if (string.IsNullOrEmpty(serviceRoleKey))
+    throw new InvalidOperationException(
+        "Supabase:ServiceRoleKey is not configured. " +
+        "Set it via user-secrets or environment variable.");
 // Add services to the container.
 
 var options = new SupabaseOptions { AutoRefreshToken = false, AutoConnectRealtime = true, Schema = "MuuqWear" };
@@ -27,6 +33,10 @@ builder.Services.AddScoped<IProfileService, ProfileService>();
 builder.Services.AddScoped<IContentService, ContentService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IOrderReturnService, OrderReturnService>();
+builder.Services.AddScoped<IAdminSettingService, AdminSettingService>();
+builder.Services.AddSingleton<SupabaseAdminClientFactory>();
+builder.Services.AddScoped<IVoteService, VoteService>();
+
 // Add services to the container.
 
 builder.Services.AddControllers();
@@ -44,6 +54,7 @@ builder.Services.AddCors(options =>
               .AllowCredentials(); //  required for cookies
     });
 });
+
 builder.Services
 .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 .AddJwtBearer(options =>

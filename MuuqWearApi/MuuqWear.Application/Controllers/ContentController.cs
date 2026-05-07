@@ -24,7 +24,7 @@ public class ContentController : BaseController
     public async Task<ActionResult<Response<List<ContentItemDTO>>>> GetAll(ContentCategory type)
     {
         var result = await _contentService.GetAll(type);
-        return HandleResponse(result); // ✅ compiles + handles JWT_EXPIRED
+        return HandleResponse(result); //  compiles + handles JWT_EXPIRED
     }
 
     [HttpGet("{type}/{id}")]

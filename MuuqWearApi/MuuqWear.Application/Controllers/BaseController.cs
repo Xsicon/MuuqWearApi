@@ -6,7 +6,7 @@ namespace MuuqWear.Application.Controllers;
 
 public class BaseController : ControllerBase
 {
-    // ✅ reusable response handler — all controllers inherit this
+    //  reusable response handler — all controllers inherit this
     protected ActionResult<Response<T>> HandleResponse<T>(Response<T> result)
     {
         if (!result.Success && result.Message.Contains("JWT_EXPIRED"))
@@ -16,7 +16,7 @@ public class BaseController : ControllerBase
         return Ok(result);
     }
 
-    // ✅ reusable userId reader — no more copy paste in every controller
+    //  reusable userId reader — no more copy paste in every controller
     protected Guid GetUserId()
     {
         var sub = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;

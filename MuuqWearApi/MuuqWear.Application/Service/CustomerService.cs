@@ -25,7 +25,7 @@ public class CustomerService : ICustomerService
             var searchTerm = search?.Trim() ?? "";
             var offset = (page - 1) * pageSize;
 
-            // ✅ get total count first
+            //  get total count first
             var countResult = await _client.Rpc(
                 "get_customers_count",
                 new Dictionary<string, object>
@@ -36,7 +36,7 @@ public class CustomerService : ICustomerService
             var totalCount = 0;
             int.TryParse(countResult.Content?.Trim('"'), out totalCount);
 
-            // ✅ fetch paginated data
+            //  fetch paginated data
             var dataResult = await _client.Rpc(
                 "get_customers",
                 new Dictionary<string, object>
