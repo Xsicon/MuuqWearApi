@@ -12,6 +12,12 @@ public class OrderDTO
     public string Status { get; set; } = "pending";
     public DateTime? CreatedAt { get; set; }
     public List<OrderItemDTO> Items { get; set; } = new();
+    public string? ItemsSummary { get; set; }  // for list card view
+    public string? FirstName { get; set; }     // for detail panel
+    public string? LastName { get; set; }      // for detail panel
+    public string? Address { get; set; }       // for detail panel
+    public string? City { get; set; }          // for detail panel
+    public string? PostalCode { get; set; }    // for detail panel
 }
 
 public class OrderItemDTO
@@ -38,4 +44,19 @@ public class PlaceOrderDTO
     public string? Address { get; set; }
     public string? City { get; set; }
     public string? PostalCode { get; set; }
+}
+
+// used by Process button → update status
+public class UpdateOrderStatusDTO
+{
+    public string Status { get; set; } = string.Empty;
+}
+
+public static class OrderStatus
+{
+    public const string Pending = "pending";
+    public const string Processing = "processing";
+    public const string Shipped = "shipped";
+    public const string Delivered = "delivered";
+    public const string Cancelled = "cancelled";
 }
