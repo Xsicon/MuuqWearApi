@@ -36,6 +36,7 @@ builder.Services.AddScoped<IOrderReturnService, OrderReturnService>();
 builder.Services.AddScoped<IAdminSettingService, AdminSettingService>();
 builder.Services.AddSingleton<SupabaseAdminClientFactory>();
 builder.Services.AddScoped<IVoteService, VoteService>();
+builder.Services.AddScoped<IHelpCenterService, HelpService>();
 
 // Add services to the container.
 
