@@ -30,6 +30,8 @@ public class AddCartItemDTO
     public Guid ProductId { get; set; }
     public string Size { get; set; } = string.Empty;
     public int Quantity { get; set; } = 1;
+    public string Color { get; set; } = string.Empty;
+
 }
 
 // used when updating quantity

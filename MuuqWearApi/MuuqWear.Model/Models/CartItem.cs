@@ -28,4 +28,7 @@ public class CartItem : BaseModel
     // when item was added to cart
     [Column("created_at")]
     public DateTime? CreatedAt { get; set; }
+
+    [Column("color")]
+    public string Color { get; set; } = string.Empty;
 }

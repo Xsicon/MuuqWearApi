@@ -20,9 +20,6 @@ public class Product : BaseModel
     [Column("image_url")]
     public string? ImageUrl { get; set; }
 
-    [Column("stock")]
-    public int Stock { get; set; }
-
     [Column("category")]
     public string? Category { get; set; }
 
@@ -55,4 +52,7 @@ public class Product : BaseModel
 
     [Column("deleted_at")]
     public DateTime? DeletedAt { get; set; }
+
+    [Column("color_options")]
+    public List<string> ColorOptions { get; set; } = new();
 }

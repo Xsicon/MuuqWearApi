@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Http;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
+using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.ContentItemDTO;
 using MuuqWear.Model.Models;
 
@@ -10,7 +11,7 @@ public class ContentService : IContentService
 {
     private readonly Supabase.Client _client;
 
-    public ContentService(SupabaseClientFactory factory)
+    public ContentService(SupabaseAdminClientFactory factory)
     {
         _client = factory.CreateClient();
     }
@@ -553,8 +554,8 @@ public class ContentService : IContentService
     {
         try
         {
-            var fileName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
-
+            var fileName =
+                $"articles/{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
             //  stream directly — no full byte load
             using var stream = file.OpenReadStream();
             using var ms = new MemoryStream();
@@ -562,7 +563,7 @@ public class ContentService : IContentService
             var bytes = ms.ToArray();
 
             await _client.Storage
-                .From("journal-images")
+                .From("app-images")
                 .Upload(bytes, fileName, new Supabase.Storage.FileOptions
                 {
                     ContentType = file.ContentType,
@@ -570,7 +571,7 @@ public class ContentService : IContentService
                 });
 
             var url = _client.Storage
-                .From("journal-images")
+                .From("app-images")
                 .GetPublicUrl(fileName);
 
             return Response<string>.SuccessResponse(url, "Image uploaded");
@@ -589,39 +590,41 @@ public class ContentService : IContentService
     {
         try
         {
-            // build query
+            // Build the base query with filters
             var query = _client.From<JournalArticle>()
                 .Filter("status", Supabase.Postgrest.Constants.Operator.Equals,
                     "published");
 
-            // apply category filter if provided
             if (!string.IsNullOrEmpty(category))
                 query = query.Filter("category",
                     Supabase.Postgrest.Constants.Operator.Equals, category);
 
-            // get total count first
-            var countResult = await query.Get();
+            // Get total count with filters applied
+            var countResult = await query
+                .Get();
             var totalCount = countResult.Models.Count;
 
-            // apply pagination
+            // Apply ordering and pagination, THEN call Get() once
             var offset = (page - 1) * pageSize;
             var result = await query
                 .Order("published_at", Supabase.Postgrest.Constants.Ordering.Descending)
                 .Range(offset, offset + pageSize - 1)
                 .Get();
 
-            var items = result.Models.Select(x => new ContentItemDTO
-            {
-                Id = x.Id,
-                Title = x.Title,
-                Content = x.Content,
-                Category = x.Category,
-                ImageUrl = x.ImageUrl,
-                Status = x.Status,
-                Views = x.Views,
-                CreatedAt = x.CreatedAt,
-                PublishedAt = x.PublishedAt
-            }).ToList();
+            var items = result.Models
+    .Where(x => x.Status.Equals("published", StringComparison.OrdinalIgnoreCase))
+    .Select(x => new ContentItemDTO
+    {
+        Id = x.Id,
+        Title = x.Title,
+        Content = x.Content,
+        Category = x.Category,
+        ImageUrl = x.ImageUrl,
+        Status = x.Status,
+        Views = x.Views,
+        CreatedAt = x.CreatedAt,
+        PublishedAt = x.PublishedAt
+    }).ToList();
 
             var totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
 

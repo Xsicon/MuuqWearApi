@@ -219,6 +219,11 @@ public class OrderReturnService : IOrderReturnService
             if (updated == null)
                 return Response<OrderReturnDTO>.Fail("Return not found");
 
+            if (status.ToLower() == ReturnStatus.Approved.ToLower())
+            {
+                await RestoreStockForOrder(updated.OrderId.Value);
+            }
+
             // Step 3 — return DTO inline
             return Response<OrderReturnDTO>.SuccessResponse(
                 new OrderReturnDTO
@@ -239,6 +244,30 @@ public class OrderReturnService : IOrderReturnService
         catch (Exception ex)
         {
             return Response<OrderReturnDTO>.Fail("Error: " + ex.Message);
+        }
+    }
+
+    private async Task RestoreStockForOrder(Guid orderId)
+    {
+        // fetch order items
+        var orderItems = await _client
+            .From<OrderItem>()
+            .Filter("order_id",
+                Supabase.Postgrest.Constants.Operator.Equals,
+                orderId.ToString())
+            .Get();
+
+        // restore stock for each item
+        foreach (var item in orderItems.Models)
+        {
+            await _client.Rpc(
+                "restore_stock",
+                new Dictionary<string, object>
+                {
+                { "p_product_id", item.ProductId.ToString() },
+                { "p_size",       item.Size ?? "" },
+                { "p_quantity",   item.Quantity }
+                });
         }
     }
 }

@@ -110,4 +110,14 @@ public class ProfileController : BaseController
 
         return Ok();
     }
+    [HttpPost("notifications-read")]
+    [Authorize]
+    public async Task<IActionResult> MarkNotificationsRead()
+    {
+        var userId = GetUserId();
+        if (userId == Guid.Empty) return Unauthorized();
+
+        await _profileService.UpdateNotificationsReadAt(userId);
+        return Ok();
+    }
 }

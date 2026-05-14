@@ -2,6 +2,7 @@
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
 using MuuqWear.Model.DTO.CartDTO;
+using MuuqWear.Model.Models;
 using Supabase;
 
 namespace MuuqWear.Application.Service;
@@ -74,6 +75,13 @@ public class CartService : ICartService
             if (product == null)
                 return Response<CartDTO>.Fail("Product not found");
 
+            var availableStock = await GetAvailableStock(
+            request.ProductId, request.Size);
+
+            if (availableStock < 1)
+                return Response<CartDTO>.Fail(
+                    $"Size {request.Size} is out of stock");
+
             // check if same product + size already in cart
             var existing = await _client
                 .From<CartItem>()
@@ -94,7 +102,7 @@ public class CartService : ICartService
                 var newQuantity = existing.Quantity + request.Quantity;
 
                 // cap at stock level
-                newQuantity = Math.Min(newQuantity, product.Stock);
+                newQuantity = Math.Min(newQuantity, availableStock);
 
                 existing.Quantity = newQuantity;
 
@@ -111,8 +119,9 @@ public class CartService : ICartService
                     UserId = userId,
                     ProductId = request.ProductId,
                     Size = request.Size,
-                    Quantity = Math.Min(request.Quantity, product.Stock),
-                    CreatedAt = DateTime.UtcNow
+                    Quantity = Math.Min(request.Quantity, availableStock),
+                    CreatedAt = DateTime.UtcNow,
+                    Color = request.Color ?? ""
                 };
 
                 await _client
@@ -155,19 +164,12 @@ public class CartService : ICartService
             if (cartItem == null)
                 return Response<CartDTO>.Fail("Cart item not found");
 
-            // check stock
-            var product = await _client
-                .From<Product>()
-                .Filter("id",
-                    Supabase.Postgrest.Constants.Operator.Equals,
-                    cartItem.ProductId.ToString())
-                .Single();
+            var availableStock = await GetAvailableStock(
+           cartItem.ProductId, cartItem.Size);
 
-            // cap at stock level
-            var newQuantity = product != null
-                ? Math.Min(request.Quantity, product.Stock)
-                : request.Quantity;
 
+
+            var newQuantity = Math.Min(request.Quantity, availableStock);
             cartItem.Quantity = newQuantity;
 
             await _client
@@ -256,8 +258,19 @@ public class CartService : ICartService
         }
     }
 
-    // =============================================
-    // PRIVATE HELPER — map CartItem to DTO
-    // fetches product details for each item
-    // =============================================
+    private async Task<int> GetAvailableStock(Guid productId, string size)
+    {
+        var stockResult = await _client
+            .From<ProductSizeStock>()
+            .Filter("product_id",
+                Supabase.Postgrest.Constants.Operator.Equals,
+                productId.ToString())
+            .Filter("size",
+                Supabase.Postgrest.Constants.Operator.Equals,
+                size)
+            .Single();
+
+        return stockResult?.Quantity ?? 0;
+    }
+
 }

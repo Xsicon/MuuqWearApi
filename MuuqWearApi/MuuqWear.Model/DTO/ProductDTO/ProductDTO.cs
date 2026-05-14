@@ -20,6 +20,8 @@ public class ProductDTO
     public List<ProductImageDTO> Images { get; set; } = new();
     public string? Sku { get; set; }                           // ← add
     public List<SizeStockDTO> SizeStock { get; set; } = new();
+    public List<string> ColorOptions { get; set; } = new();
+
 
 }
 
@@ -45,6 +47,8 @@ public class AddProductDTO
     public string? Gender { get; set; }
     public Guid? CategoryId { get; set; }
     public List<string> Sizes { get; set; } = new();
+    public List<string> ColorOptions { get; set; } = new();
+
 }
 
 public class UpdateSizeStockDTO
@@ -62,3 +66,5 @@ public class AddSizeStockDTO
     public string Size { get; set; } = string.Empty;
     public int Quantity { get; set; }
 }
+
+

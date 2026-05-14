@@ -24,4 +24,6 @@ public class Profiles : BaseModel
     public DateTime? DeletedAt { get; set; }
     [Column("last_active_at")]
     public DateTime? LastActiveAt { get; set; }
+    [Column("notifications_read_at")]
+    public DateTime? NotificationsReadAt { get; set; }
 }

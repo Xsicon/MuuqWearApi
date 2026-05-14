@@ -32,10 +32,7 @@ public class CustomerService : ICustomerService
                 {
                     { "p_search_term", searchTerm }
                 });
-
             var totalCount = 0;
-            int.TryParse(countResult.Content?.Trim('"'), out totalCount);
-
             //  fetch paginated data
             var dataResult = await _client.Rpc(
                 "get_customers",
@@ -45,7 +42,6 @@ public class CustomerService : ICustomerService
                     { "p_page_size",   pageSize   },
                     { "p_offset",      offset     }
                 });
-
             var options = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,

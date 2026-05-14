@@ -14,4 +14,6 @@ public class UpdateProductDTO
     public string? Description { get; set; }
     public string? Gender { get; set; }
     public Guid? CategoryId { get; set; }
+    public List<string> ColorOptions { get; set; } = new();
+
 }

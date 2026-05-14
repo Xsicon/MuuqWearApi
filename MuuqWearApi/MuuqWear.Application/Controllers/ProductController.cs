@@ -198,19 +198,10 @@ public class ProductController : BaseController
         return Ok(result);
     }
 
-    [HttpPatch("{productId}/stock")]
-    public async Task<ActionResult<Response<ProductDTO>>> UpdateStock(
-    Guid productId, [FromBody] UpdateStockDTO request)
-    {
-        var result = await _productService.UpdateStock(productId, request.Stock);
-        if (!result.Success) return BadRequest(result);
-        return Ok(result);
-    }
-
     [HttpPost("{productId}/size-stock")]
     public async Task<ActionResult<Response<SizeStockDTO>>> AddSizeStock(
-        Guid productId,
-        [FromBody] AddSizeStockDTO request)
+     Guid productId,
+     [FromBody] AddSizeStockDTO request)
     {
         var result = await _productService.AddSizeStock(
             productId, request.Size, request.Quantity);

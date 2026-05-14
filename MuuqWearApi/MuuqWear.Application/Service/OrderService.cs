@@ -38,6 +38,9 @@ public class OrderService : IOrderService
             if (!cartItems.Models.Any())
                 return Response<OrderDTO>.Fail("Cart is empty");
 
+            var validation = await ValidateStockAvailability(cartItems.Models);
+            if (!validation.Success)
+                return Response<OrderDTO>.Fail(validation.Message);
             // Step 3 — fetch product details for each cart item 
             // needed for snapshot + price calculation
             var orderItems = new List<OrderItem>();
@@ -115,6 +118,8 @@ public class OrderService : IOrderService
                 item.OrderId = insertedOrder.Id;
                 await _client.From<OrderItem>().Insert(item);
             }
+
+            await DecrementStockForOrder(cartItems.Models);
 
             // Step 8 — clear cart after order 
             await _client
@@ -394,11 +399,11 @@ public class OrderService : IOrderService
     // UPDATE ORDER STATUS (ADMIN)
     // =============================================
     public async Task<Response<OrderDTO>> UpdateOrderStatus(
-        Guid orderId, string status)
+     Guid orderId, string status)
     {
         try
         {
-            //  validate status — only known values accepted
+            // validate status — only known values accepted
             var validStatuses = new[]
             {
             OrderStatus.Pending,
@@ -422,6 +427,12 @@ public class OrderService : IOrderService
             var updated = result.Models.FirstOrDefault();
             if (updated == null)
                 return Response<OrderDTO>.Fail("Order not found");
+
+            // restore stock if cancelled or returned
+            if (status.ToLower() == OrderStatus.Cancelled.ToLower())
+            {
+                await RestoreStockForOrder(orderId);
+            }
 
             return Response<OrderDTO>.SuccessResponse(new OrderDTO
             {
@@ -476,6 +487,14 @@ public class OrderService : IOrderService
                 .Set(o => o.Status!, status)
                 .Update();
 
+            if (status.ToLower() == OrderStatus.Cancelled.ToLower())
+            {
+                foreach (var orderId in orderIds)
+                {
+                    await RestoreStockForOrder(orderId);
+                }
+            }
+
             return Response<int>.SuccessResponse(
                 orderIds.Count,
                 $"{orderIds.Count} orders updated to {status}");
@@ -485,5 +504,73 @@ public class OrderService : IOrderService
             return Response<int>.Fail("Error: " + ex.Message);
         }
     }
+
+    private async Task<Response<bool>> ValidateStockAvailability(
+    List<CartItem> cartItems)
+    {
+        foreach (var cartItem in cartItems)
+        {
+            var isAvailable = await _client.Rpc(
+                "validate_stock",
+                new Dictionary<string, object>
+                {
+                { "p_product_id", cartItem.ProductId.ToString() },
+                { "p_size",       cartItem.Size ?? "" },
+                { "p_quantity",   cartItem.Quantity }
+                });
+
+            var available = isAvailable.Content?.Trim().ToLower() == "true";
+
+            if (!available)
+            {
+                return Response<bool>.Fail(
+                    $"Item with size {cartItem.Size}) " +
+                    $"is out of stock. Please remove it and try again.");
+            }
+        }
+
+        return Response<bool>.SuccessResponse(true);
+    }
+
+    // ✅ Helper 2 — decrement stock
+    private async Task DecrementStockForOrder(List<CartItem> cartItems)
+    {
+        foreach (var cartItem in cartItems)
+        {
+            await _client.Rpc(
+                "decrement_stock",
+                new Dictionary<string, object>
+                {
+                { "p_product_id", cartItem.ProductId.ToString() },
+                { "p_size",       cartItem.Size ?? "" },
+                { "p_quantity",   cartItem.Quantity }
+                });
+        }
+    }
+
+    private async Task RestoreStockForOrder(Guid orderId)
+    {
+        // fetch order items
+        var orderItems = await _client
+            .From<OrderItem>()
+            .Filter("order_id",
+                Supabase.Postgrest.Constants.Operator.Equals,
+                orderId.ToString())
+            .Get();
+
+        // restore stock for each item
+        foreach (var item in orderItems.Models)
+        {
+            await _client.Rpc(
+                "restore_stock",
+                new Dictionary<string, object>
+                {
+                { "p_product_id", item.ProductId.ToString() },
+                { "p_size",       item.Size ?? "" },
+                { "p_quantity",   item.Quantity }
+                });
+        }
+    }
+
 }
 

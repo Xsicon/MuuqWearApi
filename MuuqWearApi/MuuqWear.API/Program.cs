@@ -13,11 +13,11 @@ using ContentService = MuuqWear.API.Service.ContentService;
 var builder = WebApplication.CreateBuilder(args);
 var url = builder.Configuration["SupaBase:Url"];
 var key = builder.Configuration["Authentication:SupabaseApiKey"];
-var serviceRoleKey = builder.Configuration["Supabase:ServiceRoleKey"];
-if (string.IsNullOrEmpty(serviceRoleKey))
-    throw new InvalidOperationException(
-        "Supabase:ServiceRoleKey is not configured. " +
-        "Set it via user-secrets or environment variable.");
+//var serviceRoleKey = builder.Configuration["Supabase:ServiceRoleKey"];
+//if (string.IsNullOrEmpty(serviceRoleKey))
+//	throw new InvalidOperationException(
+//		"Supabase:ServiceRoleKey is not configured. " +
+//		"Set it via user-secrets or environment variable.");
 // Add services to the container.
 
 var options = new SupabaseOptions { AutoRefreshToken = false, AutoConnectRealtime = true, Schema = "MuuqWear" };
@@ -37,6 +37,7 @@ builder.Services.AddScoped<IAdminSettingService, AdminSettingService>();
 builder.Services.AddSingleton<SupabaseAdminClientFactory>();
 builder.Services.AddScoped<IVoteService, VoteService>();
 builder.Services.AddScoped<IHelpCenterService, HelpService>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
 
 // Add services to the container.
 
@@ -47,58 +48,93 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddAuthorization();
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowFrontend", policy =>
-    {
-        policy.WithOrigins("http://localhost:5276") // your frontend URL
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials(); //  required for cookies
-    });
+	options.AddPolicy("AllowFrontend", policy =>
+	{
+		policy.WithOrigins("http://localhost:5276") // your frontend URL
+			  .AllowAnyHeader()
+			  .AllowAnyMethod()
+			  .AllowCredentials(); //  required for cookies
+	});
 });
 
+//builder.Services
+//.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+//.AddJwtBearer(options =>
+//{
+//	// directly provide signing keys 
+//	var jwks = new JsonWebKeySet(builder.Configuration["SupaBase:JwksJson"]!);
+//	var signingKeys = jwks.GetSigningKeys();
+
+//	options.TokenValidationParameters = new TokenValidationParameters
+//	{
+//		ValidateIssuerSigningKey = true,
+//		IssuerSigningKeys = signingKeys,
+//		ValidateIssuer = false,
+//		ValidateAudience = false,
+//		ValidateLifetime = true,
+//		RoleClaimType = "app_role"
+
+//	};
+
+//	options.RequireHttpsMetadata = false;
+
+//	options.Events = new JwtBearerEvents
+//	{
+//		OnAuthenticationFailed = context =>
+//		{
+//			System.Diagnostics.Debug.WriteLine($"JWT rejected: {context.Exception.Message}"); ;
+//			return Task.CompletedTask;
+//		},
+//		OnTokenValidated = context =>
+//		{
+//			System.Diagnostics.Debug.WriteLine("JWT Valid ");
+//			return Task.CompletedTask;
+//		}
+//	};
+//});
+var jwtSecret = builder.Configuration["Authentication:JwtSecret"];
+System.Diagnostics.Debug.WriteLine($"JWT Secret loaded: {!string.IsNullOrEmpty(jwtSecret)}");
+System.Diagnostics.Debug.WriteLine($"JWT Secret length: {jwtSecret?.Length}");
 builder.Services
-.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-.AddJwtBearer(options =>
-{
-    // directly provide signing keys 
-    var jwks = new JsonWebKeySet(builder.Configuration["SupaBase:JwksJson"]!);
-    var signingKeys = jwks.GetSigningKeys();
-
-    options.TokenValidationParameters = new TokenValidationParameters
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
     {
-        ValidateIssuerSigningKey = true,
-        IssuerSigningKeys = signingKeys,
-        ValidateIssuer = false,
-        ValidateAudience = false,
-        ValidateLifetime = true,
-        RoleClaimType = "app_role"
-
-    };
-
-    options.RequireHttpsMetadata = false;
-
-    options.Events = new JwtBearerEvents
-    {
-        OnAuthenticationFailed = context =>
+        // ✅ switch from JWKS to legacy HS256 secret
+        options.TokenValidationParameters = new TokenValidationParameters
         {
-            System.Diagnostics.Debug.WriteLine($"JWT rejected: {context.Exception.Message}"); ;
-            return Task.CompletedTask;
-        },
-        OnTokenValidated = context =>
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(
+                    builder.Configuration["Authentication:JwtSecret"]!)),
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateLifetime = true,
+            RoleClaimType = "app_role"
+        };
+        options.RequireHttpsMetadata = false;
+        options.Events = new JwtBearerEvents
         {
-            System.Diagnostics.Debug.WriteLine("JWT Valid ");
-            return Task.CompletedTask;
-        }
-    };
-});
+            OnAuthenticationFailed = context =>
+            {
+                Console.WriteLine(
+                    $"JWT failed: {context.Exception.Message}");
+                return Task.CompletedTask;
+            },
+            OnTokenValidated = context =>
+            {
+                Console.WriteLine("JWT Valid ✅");
+                return Task.CompletedTask;
+            }
+        };
+    });
 
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
+	app.UseSwagger();
+	app.UseSwaggerUI();
 }
 app.UseCors("AllowFrontend");
 app.UseAuthentication();

@@ -7,6 +7,7 @@ public class ProfileDTO
     public string? Email { get; set; }
     public string? Phone { get; set; }
     public bool? IsDeleted { get; set; }
+    public DateTime? NotificationsReadAt { get; set; }
 
 }
 

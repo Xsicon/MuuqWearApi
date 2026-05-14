@@ -18,7 +18,6 @@ public interface IProductService
     Task<Response<bool>> DeleteProductImage(Guid imageId);
     Task<Response<List<SizeStockDTO>>> GetSizeStock(Guid productId);
     Task<Response<SizeStockDTO>> UpdateSizeStock(Guid sizeStockId, int quantity);
-    Task<Response<ProductDTO>> UpdateStock(Guid productId, int stock);
     Task<Response<SizeStockDTO>> AddSizeStock(Guid productId, string size, int quantity);
     Task<Response<bool>> DeleteSizeStock(Guid sizeStockId);
 

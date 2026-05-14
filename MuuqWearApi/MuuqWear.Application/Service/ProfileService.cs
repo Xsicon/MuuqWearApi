@@ -38,7 +38,8 @@ public class ProfileService : IProfileService
                 FullName = result.FullName,
                 Email = result.Email,
                 Phone = result.Phone,
-                IsDeleted = result.IsDeleted
+                IsDeleted = result.IsDeleted,
+                NotificationsReadAt = result.NotificationsReadAt
             };
 
             return Response<ProfileDTO>.SuccessResponse(
@@ -127,6 +128,17 @@ public class ProfileService : IProfileService
                 Supabase.Postgrest.Constants.Operator.Equals,
                 userId.ToString())
             .Set(p => p.LastActiveAt!, DateTime.UtcNow)
+            .Update();
+    }
+
+    public async Task UpdateNotificationsReadAt(Guid userId)
+    {
+        await _client
+            .From<Profiles>()
+            .Filter("id",
+                Supabase.Postgrest.Constants.Operator.Equals,
+                userId.ToString())
+            .Set(p => p.NotificationsReadAt!, DateTime.UtcNow)
             .Update();
     }
 

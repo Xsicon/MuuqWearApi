@@ -125,9 +125,11 @@ public class AuthService : IAuthService
 
             // Fetch profile safely
             var response = await _client
-                .From<Profiles>()
-                .Where(p => p.Id == userId)
-                .Get();
+     .From<Profiles>()
+     .Filter("id",
+         Supabase.Postgrest.Constants.Operator.Equals,
+         userId.ToString())
+     .Get();
 
             var profile = response.Models.FirstOrDefault();
             if (profile?.IsDeleted == true)
@@ -141,14 +143,25 @@ public class AuthService : IAuthService
                 Email = session.User.Email ?? "",
                 UserId = session.User.Id ?? "",
                 UserName = profile?.FullName ?? "",
-                Role = profile?.Role ?? "User"
+                Role = profile?.Role ?? "user"
             };
 
             return Response<AuthResponseDTO>.SuccessResponse(authData, "Login Successful");
         }
         catch (Exception ex)
         {
-            return Response<AuthResponseDTO>.Fail("Error: " + ex.Message);
+            Console.WriteLine(ex);
+
+            if (ex.Message.Contains("invalid_credentials"))
+            {
+                return Response<AuthResponseDTO>.Fail(
+                    "Invalid email or password."
+                );
+            }
+
+            return Response<AuthResponseDTO>.Fail(
+                "Something went wrong. Please try again later."
+            );
         }
     }
 

@@ -9,5 +9,6 @@ public interface IProfileService
     Task<Response<ProfileDTO>> UpdateProfile(Guid userId, UpdateProfileDTO request);
     Task<Response<bool>> DeleteAccount(Guid userId);
     Task UpdateLastActive(Guid userId);
+    Task UpdateNotificationsReadAt(Guid userId);
 }
 
