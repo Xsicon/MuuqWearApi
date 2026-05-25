@@ -112,12 +112,12 @@ public class VoteController : BaseController
 
     // GET ACTIVE ITEMS (PUBLIC)
     // GET api/Vote/active/public
-    // ✅ no login needed — HasVoted = false for all
+    //  no login needed — HasVoted = false for all
     // =============================================
     [HttpGet("active/public")]
     public async Task<ActionResult<Response<List<VoteItemDTO>>>> GetActiveItemsPublic()
     {
-        // ✅ pass Guid.Empty → service skips user vote checks
+        //  pass Guid.Empty → service skips user vote checks
         var response = await _voteService.GetActiveItems(Guid.Empty);
         if (!response.Success) return BadRequest(response);
         return HandleResponse(response);

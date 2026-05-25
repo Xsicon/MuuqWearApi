@@ -49,6 +49,7 @@ public class AuthService : IAuthService
                 Phone = null,
                 Role = "user",
                 Email = request?.Email,
+                AffiliateCode=null,
                 CreatedAt = DateTime.UtcNow
             });
 
@@ -381,7 +382,7 @@ public class AuthService : IAuthService
                 return Response<AuthResponseDTO>.Fail("Refresh token is required");
 
             var supabaseUrl = _configuration["SupaBase:Url"];
-            var supabaseKey = _configuration["Authentication:SupabaseApiKey"];
+            var supabaseKey = _configuration["SupaBase:ServiceRoleKey"];
 
             using var http = new HttpClient();
             http.DefaultRequestHeaders.Add("apikey", supabaseKey);

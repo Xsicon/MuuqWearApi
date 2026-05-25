@@ -60,7 +60,7 @@ public static class TicketPriority
     public const string High = "high";
     public const string Normal = "normal";
 
-    // ✅ auto-assign priority based on category
+    //  auto-assign priority based on category
     public static string FromCategory(string category) =>
         category.ToLower() switch
         {

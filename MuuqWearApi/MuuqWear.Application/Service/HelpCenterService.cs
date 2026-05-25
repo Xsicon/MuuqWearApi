@@ -231,7 +231,7 @@ public class HelpService : IHelpCenterService
     // =============================================
     // PRIVATE HELPER
     // =============================================
-    // ✅ single responsibility — maps model to DTO
+    //  single responsibility — maps model to DTO
     private static SupportTicketDTO MapToDTO(SupportTicket t) =>
         new SupportTicketDTO
         {

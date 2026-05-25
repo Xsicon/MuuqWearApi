@@ -28,7 +28,7 @@ public class NotificationController : BaseController
     {
         var userId = GetUserId();
 
-        // ✅ get lastReadAt from profile
+        //  get lastReadAt from profile
         DateTime? lastReadAt = null;
 
         if (userId != Guid.Empty)

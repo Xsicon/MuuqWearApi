@@ -20,7 +20,7 @@ public class HelpController : BaseController
     // =============================================
     // SUBMIT TICKET
     // POST api/Help/ticket
-    // ✅ public — anyone can submit a ticket
+    //  public — anyone can submit a ticket
     // =============================================
     [HttpPost("ticket")]
     public async Task<ActionResult<Response<SupportTicketDTO>>> SubmitTicket(
@@ -54,7 +54,7 @@ public class HelpController : BaseController
     // =============================================
     // GET ALL TICKETS
     // GET api/Help/admin/tickets
-    // ✅ admin only
+    //  admin only
     // =============================================
     [HttpGet("admin/tickets")]
     [Authorize(Roles = "admin")]
@@ -76,7 +76,7 @@ public class HelpController : BaseController
     // =============================================
     // GET TICKET BY ID
     // GET api/Help/admin/tickets/{ticketId}
-    // ✅ admin only
+    //  admin only
     // =============================================
     [HttpGet("admin/tickets/{ticketId}")]
     [Authorize(Roles = "admin")]
@@ -95,7 +95,7 @@ public class HelpController : BaseController
     // =============================================
     // UPDATE TICKET STATUS
     // PATCH api/Help/admin/tickets/{ticketId}/status
-    // ✅ admin only
+    //  admin only
     // =============================================
     [HttpPatch("admin/tickets/{ticketId}/status")]
     [Authorize(Roles = "admin")]
@@ -121,7 +121,7 @@ public class HelpController : BaseController
     // =============================================
     // GET STATS
     // GET api/Help/admin/stats
-    // ✅ admin only
+    //  admin only
     // =============================================
     [HttpGet("admin/stats")]
     [Authorize(Roles = "admin")]

@@ -18,7 +18,7 @@ public class SupabaseClientFactory
     public Supabase.Client CreateClient()
     {
         var url = _configuration["SupaBase:Url"]!;
-        var key = _configuration["Authentication:SupabaseApiKey"]!;
+        var key = _configuration["SupaBase:ServiceRoleKey"]!;
 
         var token = _httpContextAccessor.HttpContext?
             .Request.Headers["Authorization"]

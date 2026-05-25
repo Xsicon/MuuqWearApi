@@ -8,6 +8,7 @@ public class ProfileDTO
     public string? Phone { get; set; }
     public bool? IsDeleted { get; set; }
     public DateTime? NotificationsReadAt { get; set; }
+    public string? AffiliateTier { get; set; }
 
 }
 

@@ -66,7 +66,7 @@ public class VoteService : IVoteService
                 ImageUrl = v.ImageUrl,
                 Tag = v.Tag,
                 VoteCount = v.VoteCount,
-                ColorOptions = v.ColorOptions ?? new List<string>(), // ← direct ✅
+                ColorOptions = v.ColorOptions ?? new List<string>(), // ← direct 
                 Status = v.Status,
                 Season = v.Season,
                 CreatedAt = v.CreatedAt,
@@ -114,7 +114,7 @@ public class VoteService : IVoteService
                 ImageUrl = v.ImageUrl,
                 Tag = v.Tag,
                 VoteCount = v.VoteCount,
-                ColorOptions = v.ColorOptions ?? new List<string>(), // ← direct ✅
+                ColorOptions = v.ColorOptions ?? new List<string>(), // ← direct 
                 Status = v.Status,
                 Season = v.Season,
                 CreatedAt = v.CreatedAt
@@ -171,7 +171,7 @@ public class VoteService : IVoteService
     {
         try
         {
-            // ✅ single atomic RPC call
+            //  single atomic RPC call
             // insert vote + increment count in one transaction
             var result = await _client.Rpc(
                 "cast_vote",
@@ -181,7 +181,7 @@ public class VoteService : IVoteService
                 { "p_user_id",      userId.ToString() }
                 });
 
-            // ✅ RPC returns new vote count as integer
+            //  RPC returns new vote count as integer
             if (!int.TryParse(result.Content?.Trim('"'), out var newCount))
                 return Response<VoteItemDTO>.Fail(
                     "Failed to cast vote. Please try again.");
@@ -196,7 +196,7 @@ public class VoteService : IVoteService
         }
         catch (Exception ex)
         {
-            // ✅ UNIQUE constraint violation = already voted
+            //  UNIQUE constraint violation = already voted
             // Supabase returns 23505 for unique violation
             if (ex.Message.Contains("23505") ||
                 ex.Message.Contains("duplicate") ||

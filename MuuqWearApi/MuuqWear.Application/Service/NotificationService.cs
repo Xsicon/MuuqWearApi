@@ -20,14 +20,14 @@ public class NotificationService : INotificationService
         {
             var notifications = new List<NotificationDTO>();
 
-            // ✅ run all queries in parallel
+            //  run all queries in parallel
             await Task.WhenAll(
                 FetchOrderNotifications(notifications),
                 FetchTicketNotifications(notifications),
                 FetchReturnNotifications(notifications),
                 FetchLowStockNotifications(notifications));
 
-            // ✅ sort by date descending → take 5
+            //  sort by date descending → take 5
             var result = notifications
                 .OrderByDescending(n => n.CreatedAt)
                 .Take(5)
@@ -113,7 +113,7 @@ public class NotificationService : INotificationService
     }
 
     // ─── LOW STOCK ────────────────────────────────────────────
-    // ✅ quantity < 5 → low stock alert
+    //  quantity < 5 → low stock alert
     private async Task FetchLowStockNotifications(
         List<NotificationDTO> notifications)
     {
@@ -159,7 +159,7 @@ public class NotificationService : INotificationService
                 .Take(5)
                 .ToList();
 
-            // ✅ mark as read based on lastReadAt
+            //  mark as read based on lastReadAt
             if (lastReadAt.HasValue)
             {
                 foreach (var notif in result)

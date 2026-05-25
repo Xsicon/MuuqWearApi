@@ -1,4 +1,5 @@
-﻿using MuuqWear.API.DTO;
+﻿using Microsoft.AspNetCore.Http;
+using MuuqWear.API.DTO;
 using MuuqWear.API.Models;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
@@ -9,17 +10,20 @@ namespace MuuqWear.Application.Service;
 public class OrderService : IOrderService
 {
     private readonly Supabase.Client _client;
-
-    public OrderService(SupabaseClientFactory factory)
+    private readonly IAffiliateService _affiliateService;
+    public OrderService(SupabaseClientFactory factory, IAffiliateService affiliateService)
     {
         _client = factory.CreateClient();
+        _affiliateService = affiliateService;
     }
 
     // =============================================
     // PLACE ORDER
     // =============================================
     public async Task<Response<OrderDTO>> PlaceOrder(
-        Guid userId, PlaceOrderDTO request)
+     Guid userId,
+     PlaceOrderDTO request,
+     string? affiliateCode)  //  New parameter
     {
         try
         {
@@ -41,8 +45,9 @@ public class OrderService : IOrderService
             var validation = await ValidateStockAvailability(cartItems.Models);
             if (!validation.Success)
                 return Response<OrderDTO>.Fail(validation.Message);
+
             // Step 3 — fetch product details for each cart item 
-            // needed for snapshot + price calculation
+            // Step 3 — fetch product details for each cart item 
             var orderItems = new List<OrderItem>();
             decimal subtotal = 0;
 
@@ -57,31 +62,34 @@ public class OrderService : IOrderService
 
                 if (product == null) continue;
 
-                var itemTotal = product.Price * cartItem.Quantity;
+                //  USE STORED PRICE FROM CART (includes affiliate discount)
+                // Fallback to product price for backward compatibility
+                var priceToCharge = cartItem.ProductPrice > 0
+                    ? cartItem.ProductPrice
+                    : product.Price;
+
+                var itemTotal = priceToCharge * cartItem.Quantity;
                 subtotal += itemTotal;
 
                 orderItems.Add(new OrderItem
                 {
                     Id = Guid.NewGuid(),
                     ProductId = cartItem.ProductId,
-                    // snapshot 
                     ProductName = product.Name ?? "",
                     ProductImageUrl = product.ImageUrl,
                     Size = cartItem.Size,
                     Quantity = cartItem.Quantity,
-                    Price = product.Price,
+                    Price = priceToCharge,  //  Use stored price
                     ItemTotal = itemTotal,
                     CreatedAt = DateTime.UtcNow
                 });
             }
-
             // Step 4 — calculate totals 
             var shipping = 0m;
             var tax = Math.Round(subtotal * 0.10m, 2);
             var total = subtotal + shipping + tax;
 
             // Step 5 — generate order number 
-            // format: MQ-XXXXXXXX
             var orderNumber = $"MQ-{Guid.NewGuid().ToString("N").Substring(0, 8).ToUpper()}";
 
             // Step 6 — create order 
@@ -129,6 +137,110 @@ public class OrderService : IOrderService
                     userId.ToString())
                 .Delete();
 
+            try
+            {
+                // Get items that were added via affiliate partner store
+                var affiliateItems = cartItems.Models
+                    .Where(ci => ci.IsAffiliateDiscount)
+                    .ToList();
+
+                if (affiliateItems.Any())
+                {
+                    Console.WriteLine($"📦 [Order] Tracking {affiliateItems.Count} affiliate personal purchases");
+
+                    foreach (var affiliateItem in affiliateItems)
+                    {
+                        // Get the order item we just created
+                        var orderItem = orderItems.FirstOrDefault(oi =>
+                            oi.ProductId == affiliateItem.ProductId &&
+                            oi.Size == affiliateItem.Size);
+
+                        if (orderItem == null) continue;
+
+                        // Calculate discount amount
+                        // We need original price to calculate discount
+                        var product = await _client
+                            .From<Product>()
+                            .Filter("id",
+                                Supabase.Postgrest.Constants.Operator.Equals,
+                                affiliateItem.ProductId.ToString())
+                            .Single();
+
+                        if (product == null) continue;
+
+                        var originalPrice = product.Price;
+                        var discountedPrice = affiliateItem.ProductPrice;
+                        var discountAmount = originalPrice - discountedPrice;
+                        var discountPercentage = (discountAmount / originalPrice) * 100;
+
+                        // Insert into affiliate_personal_purchases
+                        var affiliatePurchase = new AffiliatePersonalPurchase
+                        {
+                            Id = Guid.NewGuid(),
+                            UserId = userId,
+                            OrderId = insertedOrder.Id,
+                            ProductId = affiliateItem.ProductId,
+                            ProductName = orderItem.ProductName,
+                            Quantity = affiliateItem.Quantity,
+                            OriginalPrice = originalPrice,
+                            DiscountedPrice = discountedPrice,
+                            DiscountAmount = discountAmount,
+                            DiscountPercentage = (int)discountPercentage,
+                            Status = "completed",  // Order is complete
+                            PurchasedAt = DateTime.UtcNow,
+                            CreatedAt = DateTime.UtcNow
+                        };
+
+                        await _client
+                            .From<AffiliatePersonalPurchase>()
+                            .Insert(affiliatePurchase);
+
+                        Console.WriteLine($"✅ [Order] Tracked affiliate purchase: {orderItem.ProductName} x{affiliateItem.Quantity} (${discountedPrice})");
+                    }
+                }
+            }
+            catch (Exception affiliatePurchaseEx)
+            {
+                Console.WriteLine($"❌ [Order] Failed to track affiliate purchases: {affiliatePurchaseEx.Message}");
+                // Order still succeeds - tracking is non-critical
+            }
+
+
+
+            //  STEP 8.5 — TRACK AFFILIATE REFERRAL (SECURE)
+            try
+            {
+                if (!string.IsNullOrEmpty(affiliateCode))
+                {
+                    Console.WriteLine($"[Service] Processing affiliate order for: {affiliateCode}");
+
+                    var trackingResult = await _affiliateService.TrackOrderReferral(
+                        orderId: insertedOrder.Id,
+                        userId: userId,
+                        orderTotal: insertedOrder.Total,
+                        affiliateCode: affiliateCode
+                    );
+
+                    if (trackingResult.Success)
+                    {
+                        Console.WriteLine($"[Service] Affiliate tracked: {affiliateCode} - ${insertedOrder.Total:F2}");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[Service] Tracking failed: {trackingResult.Message}");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"[Service] Regular order - no affiliate code");
+                }
+            }
+            catch (Exception affiliateEx)
+            {
+                Console.WriteLine($" [Service] Affiliate tracking error: {affiliateEx.Message}");
+                // Order still succeeds
+            }
+
             // Step 9 — return order 
             var orderDTO = new OrderDTO
             {
@@ -162,7 +274,6 @@ public class OrderService : IOrderService
             return Response<OrderDTO>.Fail("Error: " + ex.Message);
         }
     }
-
     // =============================================
     // GET ORDER
     // =============================================
@@ -532,7 +643,7 @@ public class OrderService : IOrderService
         return Response<bool>.SuccessResponse(true);
     }
 
-    // ✅ Helper 2 — decrement stock
+    //  Helper 2 — decrement stock
     private async Task DecrementStockForOrder(List<CartItem> cartItems)
     {
         foreach (var cartItem in cartItems)

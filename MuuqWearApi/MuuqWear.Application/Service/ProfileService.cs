@@ -39,7 +39,8 @@ public class ProfileService : IProfileService
                 Email = result.Email,
                 Phone = result.Phone,
                 IsDeleted = result.IsDeleted,
-                NotificationsReadAt = result.NotificationsReadAt
+                NotificationsReadAt = result.NotificationsReadAt,
+                AffiliateTier = result.AffiliateTier
             };
 
             return Response<ProfileDTO>.SuccessResponse(

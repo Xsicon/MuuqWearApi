@@ -31,4 +31,8 @@ public class CartItem : BaseModel
 
     [Column("color")]
     public string Color { get; set; } = string.Empty;
+    [Column("is_affiliate_discount")]
+    public bool IsAffiliateDiscount { get; set; } = false;
+    [Column("product_price")]
+    public decimal ProductPrice { get; set; } = 0;
 }

@@ -31,6 +31,10 @@ public class AddCartItemDTO
     public string Size { get; set; } = string.Empty;
     public int Quantity { get; set; } = 1;
     public string Color { get; set; } = string.Empty;
+    public bool IsAffiliateDiscount { get; set; } = false;
+    public decimal ProductPrice { get; set; } = 0;
+
+
 
 }
 

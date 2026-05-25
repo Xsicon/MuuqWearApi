@@ -121,7 +121,9 @@ public class CartService : ICartService
                     Size = request.Size,
                     Quantity = Math.Min(request.Quantity, availableStock),
                     CreatedAt = DateTime.UtcNow,
-                    Color = request.Color ?? ""
+                    Color = request.Color ?? "",
+                    IsAffiliateDiscount = request.IsAffiliateDiscount,
+                    ProductPrice = request.ProductPrice
                 };
 
                 await _client

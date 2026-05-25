@@ -33,11 +33,22 @@ public class OrderController : BaseController
         if (userId == Guid.Empty)
             return StatusCode(401, Response<OrderDTO>.Fail("Not authenticated"));
 
+        string? affiliateCode = null;
+
+        if (Request.Headers.TryGetValue("X-Affiliate-Code", out var headerValue))
+        {
+            affiliateCode = headerValue.ToString();
+            Console.WriteLine($"[Controller] Received affiliate code from header: {affiliateCode}");
+        }
+        else
+        {
+            Console.WriteLine($" [Controller] No affiliate header - regular order");
+        }
         // validate email 
         if (string.IsNullOrWhiteSpace(request.Email))
             return BadRequest(Response<OrderDTO>.Fail("Email is required"));
 
-        var response = await _orderService.PlaceOrder(userId, request);
+        var response = await _orderService.PlaceOrder(userId, request, affiliateCode);
         if (!response.Success)
             return BadRequest(response);
 

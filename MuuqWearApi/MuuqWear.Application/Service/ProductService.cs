@@ -134,7 +134,7 @@ public class ProductService : IProductService
                 .Range(0, 5)
                 .Get();
 
-            // ✅ collect all product IDs
+            //  collect all product IDs
             var allProductIds = newArrivalsResult.Models
                 .Concat(featuredResult.Models)
                 .Concat(bestSellersResult.Models)
@@ -142,7 +142,7 @@ public class ProductService : IProductService
                 .Distinct()
                 .ToList();
 
-            // ✅ fetch size stock for all products in one query
+            //  fetch size stock for all products in one query
             var sizeStockMap = await FetchSizeStock(allProductIds);
 
             // map to DTOs
@@ -161,7 +161,7 @@ public class ProductService : IProductService
                         Price = p.Price,
                         Badge = p.Badge,
                         ImageUrl = p.ImageUrl,
-                        Stock = sizeStock.Sum(s => s.Quantity), // ✅ calculated
+                        Stock = sizeStock.Sum(s => s.Quantity), //  calculated
                         IsActive = p.IsActive,
                         IsNewArrival = p.IsNewArrival,
                         IsFeatured = p.IsFeatured,
@@ -184,7 +184,7 @@ public class ProductService : IProductService
                         Price = p.Price,
                         Badge = p.Badge,
                         ImageUrl = p.ImageUrl,
-                        Stock = sizeStock.Sum(s => s.Quantity), // ✅ calculated
+                        Stock = sizeStock.Sum(s => s.Quantity), //  calculated
                         IsActive = p.IsActive,
                         IsNewArrival = p.IsNewArrival,
                         IsFeatured = p.IsFeatured,
@@ -207,7 +207,7 @@ public class ProductService : IProductService
                         Price = p.Price,
                         Badge = p.Badge,
                         ImageUrl = p.ImageUrl,
-                        Stock = sizeStock.Sum(s => s.Quantity), // ✅ calculated
+                        Stock = sizeStock.Sum(s => s.Quantity), //  calculated
                         IsActive = p.IsActive,
                         IsNewArrival = p.IsNewArrival,
                         IsFeatured = p.IsFeatured,
@@ -272,7 +272,7 @@ public class ProductService : IProductService
             if (request.Sizes.Any())
             {
                 var totalSizes = request.Sizes.Count;
-                // ✅ still use request.Stock to distribute - it's just input data
+                //  still use request.Stock to distribute - it's just input data
                 var baseQty = request.Stock / totalSizes;
                 var remainder = request.Stock % totalSizes;
 
@@ -306,7 +306,7 @@ public class ProductService : IProductService
                 Price = inserted.Price,
                 Badge = inserted.Badge,
                 ImageUrl = inserted.ImageUrl,
-                Stock = sizeStock.Sum(s => s.Quantity), // ✅ calculated from sizes
+                Stock = sizeStock.Sum(s => s.Quantity), //  calculated from sizes
                 Category = inserted.Category,
                 IsActive = inserted.IsActive,
                 CreatedAt = inserted.CreatedAt,
@@ -398,7 +398,7 @@ public class ProductService : IProductService
                 Price = updated.Price,
                 Badge = updated.Badge,
                 ImageUrl = updated.ImageUrl,
-                Stock = sizeStock.Sum(s => s.Quantity), // ✅ calculated
+                Stock = sizeStock.Sum(s => s.Quantity), //  calculated
                 Category = updated.Category,
                 IsActive = updated.IsActive,
                 CreatedAt = updated.CreatedAt,
@@ -584,7 +584,7 @@ public class ProductService : IProductService
                 relatedProducts = result.Models;
             }
 
-            // ✅ fetch size stock for all related products
+            //  fetch size stock for all related products
             var productIds = relatedProducts.Select(p => p.Id).ToList();
             var sizeStockMap = await FetchSizeStock(productIds);
 
@@ -602,7 +602,7 @@ public class ProductService : IProductService
                     Price = p.Price,
                     Badge = p.Badge,
                     ImageUrl = p.ImageUrl,
-                    Stock = sizeStock.Sum(s => s.Quantity), // ✅ calculated
+                    Stock = sizeStock.Sum(s => s.Quantity), //  calculated
                     IsActive = p.IsActive,
                     CategoryId = p.CategoryId,
                     Description = p.Description
