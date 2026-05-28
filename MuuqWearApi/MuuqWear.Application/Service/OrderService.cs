@@ -195,7 +195,7 @@ public class OrderService : IOrderService
                             .From<AffiliatePersonalPurchase>()
                             .Insert(affiliatePurchase);
 
-                        Console.WriteLine($"✅ [Order] Tracked affiliate purchase: {orderItem.ProductName} x{affiliateItem.Quantity} (${discountedPrice})");
+                        Console.WriteLine($" [Order] Tracked affiliate purchase: {orderItem.ProductName} x{affiliateItem.Quantity} (${discountedPrice})");
                     }
                 }
             }

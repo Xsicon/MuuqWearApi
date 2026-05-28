@@ -39,6 +39,7 @@ builder.Services.AddScoped<IVoteService, VoteService>();
 builder.Services.AddScoped<IHelpCenterService, HelpService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IAffiliateService, AffiliateService>();
+//builder.Services.AddScoped<IChatService, ChatService>();
 
 // Add services to the container.
 
@@ -141,5 +142,5 @@ app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
-
+//app.MapHub<ChatHub>("/chathub");
 app.Run();

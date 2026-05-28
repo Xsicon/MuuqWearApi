@@ -25,7 +25,8 @@ public class NotificationService : INotificationService
                 FetchOrderNotifications(notifications),
                 FetchTicketNotifications(notifications),
                 FetchReturnNotifications(notifications),
-                FetchLowStockNotifications(notifications));
+                FetchLowStockNotifications(notifications),
+                FetchAffiliateApplicationNotifications(notifications));
 
             //  sort by date descending → take 5
             var result = notifications
@@ -152,7 +153,8 @@ public class NotificationService : INotificationService
                 FetchOrderNotifications(notifications),
                 FetchTicketNotifications(notifications),
                 FetchReturnNotifications(notifications),
-                FetchLowStockNotifications(notifications));
+                FetchLowStockNotifications(notifications),
+                FetchAffiliateApplicationNotifications(notifications));
 
             var result = notifications
                 .OrderByDescending(n => n.CreatedAt)
@@ -173,6 +175,28 @@ public class NotificationService : INotificationService
         {
             return Response<List<NotificationDTO>>
                 .Fail("Error: " + ex.Message);
+        }
+    }
+
+    private async Task FetchAffiliateApplicationNotifications(
+    List<NotificationDTO> notifications)
+    {
+        var applications = await _client
+            .From<AffiliateApplication>()
+            .Filter("status", Supabase.Postgrest.Constants.Operator.Equals, "pending")
+            .Order("submitted_at", Supabase.Postgrest.Constants.Ordering.Descending)
+            .Limit(5)
+            .Get();
+
+        foreach (var app in applications.Models)
+        {
+            notifications.Add(new NotificationDTO
+            {
+                Id = app.Id,
+                Type = "affiliate_application",
+                Message = $"New affiliate application from {app.FullName}",
+                CreatedAt = app.SubmittedAt
+            });
         }
     }
 }
