@@ -1,7 +1,7 @@
 ﻿using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
 using MuuqWear.Model.DTO.HelpCenterDTO;
-using MuuqWear.Model.Models;
+using MuuqWear.Model.Models.SupportTicket;
 using System.Text.Json;
 
 namespace MuuqWear.Application.Service;

@@ -1,4 +1,4 @@
-﻿namespace MuuqWear.Model.Models;
+﻿namespace MuuqWear.Model.Models.Chat;
 public class SendMessageRequest
 {
     public Guid? SessionId { get; set; }

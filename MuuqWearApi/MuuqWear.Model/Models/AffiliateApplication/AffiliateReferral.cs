@@ -1,7 +1,7 @@
 ﻿using Supabase.Postgrest.Attributes;
 using Supabase.Postgrest.Models;
 
-namespace MuuqWear.Model.Models;
+namespace MuuqWear.Model.Models.AffiliateApplication;
 [Table("affiliate_referrals")]
 public class AffiliateReferral : BaseModel
 {

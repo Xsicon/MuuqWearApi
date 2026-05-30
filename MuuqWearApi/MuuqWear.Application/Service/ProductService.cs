@@ -1,10 +1,9 @@
 ﻿using Microsoft.AspNetCore.Http;
 using MuuqWear.API.DTO.ProductDTO;
 using MuuqWear.API.Interfaces;
-using MuuqWear.API.Models;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Shared;
-using MuuqWear.Model.Models;
+using MuuqWear.Model.Models.Product;
 using Supabase;
 using Supabase.Postgrest;
 using static Supabase.Postgrest.Constants;

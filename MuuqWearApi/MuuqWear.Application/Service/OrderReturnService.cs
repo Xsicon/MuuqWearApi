@@ -1,7 +1,7 @@
 ﻿using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
 using MuuqWear.Model.DTO.OrdeReturnDTO;
-using MuuqWear.Model.Models;
+using MuuqWear.Model.Models.Order;
 
 namespace MuuqWear.Application.Service;
 

@@ -1,8 +1,8 @@
 ﻿using MuuqWear.API.Interfaces;
-using MuuqWear.API.Models;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
 using MuuqWear.Model.DTO.ProfileDTO;
+using MuuqWear.Model.Models.Profiles;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace MuuqWear.API.Service;

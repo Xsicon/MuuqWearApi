@@ -1,7 +1,10 @@
 ﻿using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
 using MuuqWear.Model.DTO.NotificationDTO;
-using MuuqWear.Model.Models;
+using MuuqWear.Model.Models.AffiliateApplication;
+using MuuqWear.Model.Models.Order;
+using MuuqWear.Model.Models.Product;
+using MuuqWear.Model.Models.SupportTicket;
 
 namespace MuuqWear.Application.Service;
 

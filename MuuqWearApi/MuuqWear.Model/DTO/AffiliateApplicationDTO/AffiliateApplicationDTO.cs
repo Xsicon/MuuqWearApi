@@ -1,4 +1,4 @@
-﻿using MuuqWear.Model.Models;
+﻿using MuuqWear.Model.Models.AffiliateApplication;
 
 namespace MuuqWear.Model.DTO.AffiliateApplicationDTO;
 

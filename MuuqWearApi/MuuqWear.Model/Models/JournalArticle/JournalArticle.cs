@@ -1,10 +1,10 @@
 ﻿using Supabase.Postgrest.Attributes;
 using Supabase.Postgrest.Models;
 
-namespace MuuqWear.Model.Models;
+namespace MuuqWear.Model.Models.JournalArticle;
 
-[Table("events")]
-public class Event : BaseModel
+[Table("journal_articles")]
+public class JournalArticle : BaseModel
 {
     [PrimaryKey("id", false)]
     public Guid Id { get; set; }
@@ -26,4 +26,9 @@ public class Event : BaseModel
 
     [Column("published_at")]
     public DateTime? PublishedAt { get; set; }
+    [Column("category")]
+    public string? Category { get; set; }  // ← add
+
+    [Column("image_url")]
+    public string? ImageUrl { get; set; }
 }

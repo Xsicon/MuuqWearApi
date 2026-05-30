@@ -1,7 +1,7 @@
 ﻿using Supabase.Postgrest.Attributes;
 using Supabase.Postgrest.Models;
 
-namespace MuuqWear.Model.Models;
+namespace MuuqWear.Model.Models.PreOrderInterest;
 [Table("pre_order_interests")]
 public class PreOrderInterest : BaseModel
 {

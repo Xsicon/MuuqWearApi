@@ -1,7 +1,7 @@
 ﻿using MuuqWear.API.DTO.ProductDTO;
 using MuuqWear.API.Interfaces;
-using MuuqWear.API.Models;
 using MuuqWear.API.Shared;
+using MuuqWear.Model.Models.Category;
 using Supabase;
 
 namespace MuuqWear.API.Service;

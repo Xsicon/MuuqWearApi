@@ -1,10 +1,12 @@
-﻿using MuuqWear.API.Models;
-using MuuqWear.API.Shared;
+﻿using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
 using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.AffiliateApplicationDTO;
 using MuuqWear.Model.DTO.PartnerStoreProductDTO;
-using MuuqWear.Model.Models;
+using MuuqWear.Model.Models.AffiliateApplication;
+using MuuqWear.Model.Models.Order;
+using MuuqWear.Model.Models.Product;
+using MuuqWear.Model.Models.Profiles;
 
 namespace MuuqWear.Application.Service;
 

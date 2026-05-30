@@ -1,7 +1,7 @@
 ﻿using MuuqWear.API.Interfaces;
 using MuuqWear.API.Shared;
 using MuuqWear.Model.Address;
-using MuuqWear.Model.Models;
+using MuuqWear.Model.Models.Address;
 using Supabase;
 
 namespace MuuqWear.API.Service;

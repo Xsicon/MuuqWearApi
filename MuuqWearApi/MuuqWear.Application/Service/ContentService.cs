@@ -3,7 +3,9 @@ using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
 using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.ContentItemDTO;
-using MuuqWear.Model.Models;
+using MuuqWear.Model.Models.DesignHistory;
+using MuuqWear.Model.Models.Event;
+using MuuqWear.Model.Models.JournalArticle;
 
 namespace MuuqWear.API.Service;
 

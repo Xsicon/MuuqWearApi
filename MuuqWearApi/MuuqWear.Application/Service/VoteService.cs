@@ -1,7 +1,8 @@
 ﻿using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
 using MuuqWear.Model.DTO.VoteDTO;
-using MuuqWear.Model.Models;
+using MuuqWear.Model.Models.PreOrderInterest;
+using MuuqWear.Model.Models.UserVote;
 using System.Text.Json;
 
 namespace MuuqWear.Application.Service;

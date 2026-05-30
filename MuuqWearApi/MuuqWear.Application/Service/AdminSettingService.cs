@@ -1,12 +1,12 @@
 ﻿using Microsoft.Extensions.Configuration;
-using MuuqWear.API.Models;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
 using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO;
 using MuuqWear.Model.DTO.AdminSettingsUserDTO;
 using MuuqWear.Model.DTO.SupaBaseHealthDTO;
-using MuuqWear.Model.Models;
+using MuuqWear.Model.Models.Order;
+using MuuqWear.Model.Models.Profiles;
 using System.Net.Http.Json;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 

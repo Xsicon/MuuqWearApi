@@ -1,7 +1,7 @@
 ﻿using Supabase.Postgrest.Attributes;
 using Supabase.Postgrest.Models;
 
-namespace MuuqWear.API.Models;
+namespace MuuqWear.Model.Models.Profiles;
 [Table("profiles")]
 public class Profiles : BaseModel
 {

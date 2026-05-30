@@ -1,9 +1,11 @@
 ﻿using Microsoft.AspNetCore.Http;
 using MuuqWear.API.DTO;
-using MuuqWear.API.Models;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
-using MuuqWear.Model.Models;
+using MuuqWear.Model.Models.AffiliateApplication;
+using MuuqWear.Model.Models.CartItem;
+using MuuqWear.Model.Models.Order;
+using MuuqWear.Model.Models.Product;
 using Supabase;
 
 namespace MuuqWear.Application.Service;

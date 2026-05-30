@@ -1,10 +1,10 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using MuuqWear.API.Models;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
 using MuuqWear.Model.DTO.AffiliateApplicationDTO;
 using MuuqWear.Model.DTO.PartnerStoreProductDTO;
+using MuuqWear.Model.Models.Profiles;
 
 namespace MuuqWear.Application.Controllers;
 [ApiController]
