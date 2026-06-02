@@ -4,7 +4,6 @@ using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
 using MuuqWear.Application.Service;
 using MuuqWear.Model.DTO.AdminSettingsUserDTO;
-using MuuqWear.Model.DTO.SupaBaseHealthDTO;
 
 namespace MuuqWear.Application.Controllers;
 
@@ -103,6 +102,14 @@ public class AdminSettingController : BaseController
     public async Task<ActionResult<Response<SupabaseHealthDTO>>> CheckSupabaseHealth()
     {
         var response = await _adminSettingService.CheckSupabaseHealth();
+        if (!response.Success) return BadRequest(response);
+        return HandleResponse(response);
+    }
+
+    [HttpGet("stripe-health")]
+    public async Task<ActionResult<Response<StripeHealthDTO>>> CheckStripeHealth()
+    {
+        var response = await _adminSettingService.CheckStripeHealth();
         if (!response.Success) return BadRequest(response);
         return HandleResponse(response);
     }

@@ -106,6 +106,8 @@ public class OrderService : IOrderService
                 Tax = tax,
                 Total = total,
                 Status = "pending",
+                PaymentStatus = "pending",
+                PendingAffiliateCode = affiliateCode,
                 FirstName = request.FirstName,
                 LastName = request.LastName,
                 Address = request.Address,
@@ -129,119 +131,8 @@ public class OrderService : IOrderService
                 await _client.From<OrderItem>().Insert(item);
             }
 
-            await DecrementStockForOrder(cartItems.Models);
-
-            // Step 8 — clear cart after order 
-            await _client
-                .From<CartItem>()
-                .Filter("user_id",
-                    Supabase.Postgrest.Constants.Operator.Equals,
-                    userId.ToString())
-                .Delete();
-
-            try
-            {
-                // Get items that were added via affiliate partner store
-                var affiliateItems = cartItems.Models
-                    .Where(ci => ci.IsAffiliateDiscount)
-                    .ToList();
-
-                if (affiliateItems.Any())
-                {
-                    Console.WriteLine($"📦 [Order] Tracking {affiliateItems.Count} affiliate personal purchases");
-
-                    foreach (var affiliateItem in affiliateItems)
-                    {
-                        // Get the order item we just created
-                        var orderItem = orderItems.FirstOrDefault(oi =>
-                            oi.ProductId == affiliateItem.ProductId &&
-                            oi.Size == affiliateItem.Size);
-
-                        if (orderItem == null) continue;
-
-                        // Calculate discount amount
-                        // We need original price to calculate discount
-                        var product = await _client
-                            .From<Product>()
-                            .Filter("id",
-                                Supabase.Postgrest.Constants.Operator.Equals,
-                                affiliateItem.ProductId.ToString())
-                            .Single();
-
-                        if (product == null) continue;
-
-                        var originalPrice = product.Price;
-                        var discountedPrice = affiliateItem.ProductPrice;
-                        var discountAmount = originalPrice - discountedPrice;
-                        var discountPercentage = (discountAmount / originalPrice) * 100;
-
-                        // Insert into affiliate_personal_purchases
-                        var affiliatePurchase = new AffiliatePersonalPurchase
-                        {
-                            Id = Guid.NewGuid(),
-                            UserId = userId,
-                            OrderId = insertedOrder.Id,
-                            ProductId = affiliateItem.ProductId,
-                            ProductName = orderItem.ProductName,
-                            Quantity = affiliateItem.Quantity,
-                            OriginalPrice = originalPrice,
-                            DiscountedPrice = discountedPrice,
-                            DiscountAmount = discountAmount,
-                            DiscountPercentage = (int)discountPercentage,
-                            Status = "completed",  // Order is complete
-                            PurchasedAt = DateTime.UtcNow,
-                            CreatedAt = DateTime.UtcNow
-                        };
-
-                        await _client
-                            .From<AffiliatePersonalPurchase>()
-                            .Insert(affiliatePurchase);
-
-                        Console.WriteLine($" [Order] Tracked affiliate purchase: {orderItem.ProductName} x{affiliateItem.Quantity} (${discountedPrice})");
-                    }
-                }
-            }
-            catch (Exception affiliatePurchaseEx)
-            {
-                Console.WriteLine($"❌ [Order] Failed to track affiliate purchases: {affiliatePurchaseEx.Message}");
-                // Order still succeeds - tracking is non-critical
-            }
 
 
-
-            //  STEP 8.5 — TRACK AFFILIATE REFERRAL (SECURE)
-            try
-            {
-                if (!string.IsNullOrEmpty(affiliateCode))
-                {
-                    Console.WriteLine($"[Service] Processing affiliate order for: {affiliateCode}");
-
-                    var trackingResult = await _affiliateService.TrackOrderReferral(
-                        orderId: insertedOrder.Id,
-                        userId: userId,
-                        orderTotal: insertedOrder.Total,
-                        affiliateCode: affiliateCode
-                    );
-
-                    if (trackingResult.Success)
-                    {
-                        Console.WriteLine($"[Service] Affiliate tracked: {affiliateCode} - ${insertedOrder.Total:F2}");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"[Service] Tracking failed: {trackingResult.Message}");
-                    }
-                }
-                else
-                {
-                    Console.WriteLine($"[Service] Regular order - no affiliate code");
-                }
-            }
-            catch (Exception affiliateEx)
-            {
-                Console.WriteLine($" [Service] Affiliate tracking error: {affiliateEx.Message}");
-                // Order still succeeds
-            }
 
             // Step 9 — return order 
             var orderDTO = new OrderDTO
@@ -643,6 +534,122 @@ public class OrderService : IOrderService
         }
 
         return Response<bool>.SuccessResponse(true);
+    }
+
+    public async Task<Response<bool>> FinalizeOrder(Guid orderId)
+    {
+        try
+        {
+            // ── 1. Load order ──────────────────────────────────────
+            var order = await _client.From<Order>()
+                .Where(o => o.Id == orderId).Single();
+
+            if (order == null)
+                return Response<bool>.Fail("Order not found");
+
+            // ── 2. Idempotency (webhooks can fire twice) ───────────
+            if (order.PaymentStatus == "paid")
+            {
+                Console.WriteLine($"[Order] {orderId} already finalized — skipping");
+                return Response<bool>.SuccessResponse(true, "Already finalized");
+            }
+
+            // ── 3. Load cart items (source of truth for both
+            //       stock decrement and affiliate-discount flag) ────
+            var cartResult = await _client.From<CartItem>()
+                .Filter("user_id",
+                    Supabase.Postgrest.Constants.Operator.Equals,
+                    order.UserId.ToString())
+                .Get();
+            var cartItems = cartResult.Models;
+
+            // ── 4. Track affiliate personal purchases ──────────────
+            //    (must run before cart is cleared — relies on cart's
+            //     IsAffiliateDiscount flag)
+            try
+            {
+                var affiliateItems = cartItems
+                    .Where(ci => ci.IsAffiliateDiscount)
+                    .ToList();
+
+                foreach (var affiliateItem in affiliateItems)
+                {
+                    var product = await _client.From<Product>()
+                        .Filter("id",
+                            Supabase.Postgrest.Constants.Operator.Equals,
+                            affiliateItem.ProductId.ToString())
+                        .Single();
+                    if (product == null) continue;
+
+                    var originalPrice = product.Price;
+                    var discountedPrice = affiliateItem.ProductPrice;
+                    var discountAmount = originalPrice - discountedPrice;
+                    var discountPercentage = (discountAmount / originalPrice) * 100;
+
+                    await _client.From<AffiliatePersonalPurchase>().Insert(
+                        new AffiliatePersonalPurchase
+                        {
+                            Id = Guid.NewGuid(),
+                            UserId = order.UserId,
+                            OrderId = order.Id,
+                            ProductId = affiliateItem.ProductId,
+                            ProductName = product.Name ?? "",
+                            Quantity = affiliateItem.Quantity,
+                            OriginalPrice = originalPrice,
+                            DiscountedPrice = discountedPrice,
+                            DiscountAmount = discountAmount,
+                            DiscountPercentage = (int)discountPercentage,
+                            Status = "completed",
+                            PurchasedAt = DateTime.UtcNow,
+                            CreatedAt = DateTime.UtcNow
+                        });
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Order] Affiliate personal-purchase tracking failed: {ex.Message}");
+                // Non-critical — payment still succeeds
+            }
+
+            // ── 5. Track affiliate referral (commission) ───────────
+            try
+            {
+                if (!string.IsNullOrEmpty(order.PendingAffiliateCode))
+                {
+                    await _affiliateService.TrackOrderReferral(
+                        orderId: order.Id,
+                        userId: order.UserId,
+                        orderTotal: order.Total,
+                        affiliateCode: order.PendingAffiliateCode);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Order] Affiliate referral tracking failed: {ex.Message}");
+                // Non-critical
+            }
+
+            // ── 6. Decrement stock ─────────────────────────────────
+            await DecrementStockForOrder(cartItems);
+
+            // ── 7. Clear cart ──────────────────────────────────────
+            await _client.From<CartItem>()
+                .Filter("user_id",
+                    Supabase.Postgrest.Constants.Operator.Equals,
+                    order.UserId.ToString())
+                .Delete();
+
+            // ── 8. Mark paid ───────────────────────────────────────
+            order.PaymentStatus = "paid";
+            await _client.From<Order>().Update(order);
+
+            return Response<bool>.SuccessResponse(true, "Order finalized");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Order] FinalizeOrder error: {ex.Message}");
+            return Response<bool>.Fail($"Error: {ex.Message}");
+        }
     }
 
     //  Helper 2 — decrement stock

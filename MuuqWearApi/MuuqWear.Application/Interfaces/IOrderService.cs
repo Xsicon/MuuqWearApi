@@ -14,4 +14,5 @@ public interface IOrderService
     Task<Response<OrderDTO>> GetOrderDetail(Guid orderId);
     Task<Response<OrderDTO>> UpdateOrderStatus(Guid orderId, string status);
     Task<Response<int>> BulkUpdateOrderStatus(List<Guid> orderIds, string status);
+    Task<Response<bool>> FinalizeOrder(Guid orderId);
 }

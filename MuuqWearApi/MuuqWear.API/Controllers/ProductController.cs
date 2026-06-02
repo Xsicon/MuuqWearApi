@@ -82,6 +82,7 @@ public class ProductController : BaseController
     }
 
     [HttpPost("upload-image")]
+    [Consumes("multipart/form-data")]
     public async Task<ActionResult<Response<string>>> UploadImage(IFormFile file)
     {
         if (file == null || file.Length == 0)

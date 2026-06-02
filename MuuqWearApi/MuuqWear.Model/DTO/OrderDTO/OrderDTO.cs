@@ -18,6 +18,8 @@ public class OrderDTO
     public string? Address { get; set; }       // for detail panel
     public string? City { get; set; }          // for detail panel
     public string? PostalCode { get; set; }    // for detail panel
+    public string PaymentStatus { get; set; } = string.Empty;
+    public string? StripePaymentIntentId { get; set; }
 }
 
 public class OrderItemDTO

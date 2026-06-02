@@ -50,4 +50,11 @@ public class Order : BaseModel
 
     [Column("created_at")]
     public DateTime? CreatedAt { get; set; }
+    [Column("payment_status")]
+    public string PaymentStatus { get; set; } = "pending";
+
+    [Column("stripe_payment_intent_id")]
+    public string? StripePaymentIntentId { get; set; }
+    [Column("pending_affiliate_code")]
+    public string? PendingAffiliateCode { get; set; }
 }

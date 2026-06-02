@@ -4,7 +4,6 @@ using MuuqWear.Application.Interfaces;
 using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO;
 using MuuqWear.Model.DTO.AdminSettingsUserDTO;
-using MuuqWear.Model.DTO.SupaBaseHealthDTO;
 using MuuqWear.Model.Models.Order;
 using MuuqWear.Model.Models.Profiles;
 using System.Net.Http.Json;
@@ -250,6 +249,38 @@ public class AdminSettingService : IAdminSettingService
                     Status = "Unhealthy",
                     CheckedAt = DateTime.UtcNow
                 }, "Supabase is unhealthy");
+        }
+    }
+
+    // =============================================
+    // CHECK STRIPE HEALTH
+    // =============================================
+    public async Task<Response<StripeHealthDTO>> CheckStripeHealth()
+    {
+        try
+        {
+            // Lightweight authenticated call — fetches account balance.
+            // Verifies: network reachability + secret key validity.
+            var balanceService = new Stripe.BalanceService();
+            await balanceService.GetAsync();
+
+            return Response<StripeHealthDTO>.SuccessResponse(
+                new StripeHealthDTO
+                {
+                    IsHealthy = true,
+                    Status = "Healthy",
+                    CheckedAt = DateTime.UtcNow
+                }, "Stripe is healthy");
+        }
+        catch (Exception)
+        {
+            return Response<StripeHealthDTO>.SuccessResponse(
+                new StripeHealthDTO
+                {
+                    IsHealthy = false,
+                    Status = "Unhealthy",
+                    CheckedAt = DateTime.UtcNow
+                }, "Stripe is unhealthy");
         }
     }
 }

@@ -17,7 +17,7 @@ public class ProductService : IProductService
     public ProductService(SupabaseClientFactory factory, SupabaseAdminClientFactory adminClient)
     {
         _client = factory.CreateClient();
-        _adminClient = factory.CreateClient();
+        _adminClient = adminClient.CreateClient();
 
     }
 
@@ -343,7 +343,7 @@ public class ProductService : IProductService
                 .Upload(buffer, fileName, new Supabase.Storage.FileOptions
                 {
                     ContentType = file.ContentType,
-                    Upsert = true
+                    Upsert = false
                 });
 
             var publicUrl = _adminClient.Storage

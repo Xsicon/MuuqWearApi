@@ -1,6 +1,6 @@
-﻿namespace MuuqWear.Model.DTO.SupaBaseHealthDTO;
+﻿namespace MuuqWear.Model.DTO.AdminSettingsUserDTO;
 
-public class SupabaseHealthDTO
+public class StripeHealthDTO
 {
     public bool IsHealthy { get; set; }
     public string Status { get; set; } = string.Empty;

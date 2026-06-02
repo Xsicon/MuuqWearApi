@@ -176,4 +176,11 @@ public class OrderController : BaseController
         if (!response.Success) return BadRequest(response);
         return HandleResponse(response);
     }
+    [HttpPost("test-finalize/{id}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> TestFinalize(Guid id)
+    {
+        var result = await _orderService.FinalizeOrder(id);
+        return Ok(result);
+    }
 }
