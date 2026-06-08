@@ -55,4 +55,6 @@ public class Product : BaseModel
 
     [Column("color_options")]
     public List<string> ColorOptions { get; set; } = new();
+    [Column("is_ticket")]
+    public bool IsTicket { get; set; }
 }

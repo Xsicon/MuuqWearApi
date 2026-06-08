@@ -26,4 +26,32 @@ public class DesignHistory : BaseModel
 
     [Column("published_at")]
     public DateTime? PublishedAt { get; set; }
+    [Column("designer")]
+    public string? Designer { get; set; }
+
+    [Column("year")]
+    public string? Year { get; set; }
+
+    [Column("inspiration")]
+    public string? Inspiration { get; set; }
+
+    [Column("collection")]
+    public string? Collection { get; set; }
+
+    [Column("second_image_url")]
+    public string? SecondImageUrl { get; set; }
+
+    [Column("technical_fabric")]
+    public string? TechnicalFabric { get; set; }
+
+    [Column("technical_techniques")]
+    public string? TechnicalTechniques { get; set; }
+
+    [Column("technical_production")]
+    public string? TechnicalProduction { get; set; }
+
+    [Column("technical_availability")]
+    public string? TechnicalAvailability { get; set; }
+    [Column("image_url")]
+    public string? ImageUrl { get; set; }
 }

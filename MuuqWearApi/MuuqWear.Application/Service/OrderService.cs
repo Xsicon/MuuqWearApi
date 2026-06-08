@@ -550,7 +550,6 @@ public class OrderService : IOrderService
             // ── 2. Idempotency (webhooks can fire twice) ───────────
             if (order.PaymentStatus == "paid")
             {
-                Console.WriteLine($"[Order] {orderId} already finalized — skipping");
                 return Response<bool>.SuccessResponse(true, "Already finalized");
             }
 

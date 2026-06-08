@@ -72,7 +72,6 @@ public class PaymentController : BaseController
             return BadRequest();   // 400 — Stripe will retry, but won't accept invalid forever
         }
 
-        Console.WriteLine($"[Webhook] Received: {stripeEvent.Type}");
 
         // Hand off to the service. The HTTP response below is just acknowledgment;
         // anything that happens here is acted on AFTER we tell Stripe "got it".

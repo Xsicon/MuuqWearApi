@@ -105,5 +105,12 @@ public class ContentController : BaseController
         if (!result.Success) return BadRequest(result);
         return Ok(result);
     }
+    [HttpGet("design-history/published")]
+    [AllowAnonymous]
+    public async Task<ActionResult<Response<List<ContentItemDTO>>>> GetPublishedDesignHistory()
+    {
+        var result = await _contentService.GetPublishedDesignHistory();
+        return HandleResponse(result);
+    }
 }
 

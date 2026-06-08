@@ -834,12 +834,12 @@ public class AffiliateService : IAffiliateService
                 }
                 else
                 {
-                    Console.WriteLine($"ℹ️ [AffiliateService] Additional conversion (click already marked)");
+                    Console.WriteLine($"[AffiliateService] Additional conversion (click already marked)");
                 }
             }
             catch (Exception clickEx)
             {
-                Console.WriteLine($"⚠️ [AffiliateService] Click update: {clickEx.Message}");
+                Console.WriteLine($"[AffiliateService] Click update: {clickEx.Message}");
             }
 
             // STEP 7: Update profile stats
@@ -883,7 +883,6 @@ public class AffiliateService : IAffiliateService
             var endDate = DateTime.UtcNow.Date; // Today at midnight
             var startDate = endDate.AddDays(-29); // 30 days ago (including today = 30 days)
 
-            Console.WriteLine($"📊 [Chart] Loading data from {startDate:yyyy-MM-dd} to {endDate:yyyy-MM-dd}");
 
             // Step 2: Get all clicks in the last 30 days
             var clicks = await _client
@@ -892,7 +891,6 @@ public class AffiliateService : IAffiliateService
                 .Where(c => c.ClickedAt >= startDate)
                 .Get();
 
-            Console.WriteLine($"📊 [Chart] Found {clicks.Models.Count} clicks");
 
             // Step 3: Get all conversions in the last 30 days
             var referrals = await _client
@@ -901,7 +899,6 @@ public class AffiliateService : IAffiliateService
                 .Where(r => r.CreatedAt >= startDate)
                 .Get();
 
-            Console.WriteLine($"📊 [Chart] Found {referrals.Models.Count} conversions");
 
             // Step 4: Group clicks by date
             var clicksByDate = clicks.Models
@@ -940,7 +937,6 @@ public class AffiliateService : IAffiliateService
                 DailyStats = dailyStats
             };
 
-            Console.WriteLine($" [Chart] Generated {dailyStats.Count} days of data");
 
             return Response<PerformanceChartDTO>.SuccessResponse(
                 chartData,
@@ -965,8 +961,6 @@ public class AffiliateService : IAffiliateService
     {
         try
         {
-            Console.WriteLine($" [PartnerStore] Fetching products - Page {page}, Size {pageSize}");
-
             // Validate pagination parameters
             if (page < 1) page = 1;
             if (pageSize < 1 || pageSize > 100) pageSize = 15;
@@ -1029,7 +1023,6 @@ public class AffiliateService : IAffiliateService
                 .Where(s => productIds.Contains(s.ProductId))
                 .ToList() ?? new List<ProductSizeStock>();
 
-            Console.WriteLine($" [PartnerStore] Found {relevantStock.Count} stock records");
 
             var stockByProduct = relevantStock
                 .GroupBy(s => s.ProductId)
@@ -1051,7 +1044,6 @@ public class AffiliateService : IAffiliateService
                 HasMore = page < totalPages,
             };
 
-            Console.WriteLine($"[PartnerStore] Returned page {page}/{totalPages} ({productDTOs.Count} products)");
 
             return Response<PaginatedResponse<PartnerStoreProductDTO>>.SuccessResponse(
                 paginatedResponse,
@@ -1136,7 +1128,6 @@ public class AffiliateService : IAffiliateService
     {
         try
         {
-            Console.WriteLine($"[PartnerStore] Getting limit status for user: {userId}");
 
             // Step 1: Verify affiliate
             var profile = await _client
@@ -1168,7 +1159,6 @@ public class AffiliateService : IAffiliateService
                 LimitReached = itemsPurchased >= MONTHLY_PURCHASE_LIMIT
             };
 
-            Console.WriteLine($" [PartnerStore] Limit: {itemsPurchased}/{MONTHLY_PURCHASE_LIMIT}");
 
             return Response<AffiliatePurchaseLimitDTO>.SuccessResponse(
                 limitDTO,
@@ -1195,7 +1185,6 @@ public class AffiliateService : IAffiliateService
             var monthStart = GetCurrentMonthStart();
             var monthEnd = GetNextMonthStart();
 
-            Console.WriteLine($"📊 [PartnerStore] Counting purchases from {monthStart:yyyy-MM-dd} to {monthEnd:yyyy-MM-dd}");
 
             // Query affiliate_personal_purchases for current month
             var purchasesResponse = await _client
@@ -1215,7 +1204,6 @@ public class AffiliateService : IAffiliateService
             // Sum quantities
             var totalItems = purchasesResponse.Models.Sum(p => p.Quantity);
 
-            Console.WriteLine($" [PartnerStore] Found {totalItems} items purchased this month");
 
             return totalItems;
         }
@@ -1274,13 +1262,12 @@ public class AffiliateService : IAffiliateService
                     $"Purchase would exceed monthly limit. You have {remaining} items remaining.");
             }
 
-            Console.WriteLine($" [PartnerStore] Purchase allowed: {totalAfterPurchase}/{MONTHLY_PURCHASE_LIMIT}");
 
             return Response<bool>.SuccessResponse(true, "Purchase allowed");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ [PartnerStore] Error checking purchase: {ex.Message}");
+            Console.WriteLine($"[PartnerStore] Error checking purchase: {ex.Message}");
             return Response<bool>.Fail($"Error validating purchase: {ex.Message}");
         }
     }
@@ -1323,8 +1310,6 @@ public class AffiliateService : IAffiliateService
     {
         try
         {
-            Console.WriteLine($" [Affiliate] Fetching recent referrals for user: {userId}");
-
             // Step 1: Get affiliate's code
             var profile = await _client
                 .From<Profiles>()
@@ -1388,15 +1373,13 @@ public class AffiliateService : IAffiliateService
                 };
             }).ToList();
 
-            Console.WriteLine($"[Affiliate] Found {recentReferrals.Count} recent referrals");
-
             return Response<List<RecentReferralDTO>>.SuccessResponse(
                 recentReferrals,
                 "Recent referrals loaded");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ [Affiliate] Error fetching recent referrals: {ex.Message}");
+            Console.WriteLine($"[Affiliate] Error fetching recent referrals: {ex.Message}");
             return Response<List<RecentReferralDTO>>.Fail(
                 $"Failed to load recent referrals: {ex.Message}");
         }

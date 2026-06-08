@@ -49,7 +49,6 @@ public class ChatService : IChatService
 
                 var created = await _client.From<ChatSession>().Insert(newSession);
                 sessionId = created.Models.First().Id;
-                Console.WriteLine($"[Chat] Created session: {sessionId}");
             }
 
             // STEP 2: Determine sender display

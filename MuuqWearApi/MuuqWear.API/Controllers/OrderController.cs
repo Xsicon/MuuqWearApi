@@ -38,7 +38,6 @@ public class OrderController : BaseController
         if (Request.Headers.TryGetValue("X-Affiliate-Code", out var headerValue))
         {
             affiliateCode = headerValue.ToString();
-            Console.WriteLine($"[Controller] Received affiliate code from header: {affiliateCode}");
         }
         else
         {

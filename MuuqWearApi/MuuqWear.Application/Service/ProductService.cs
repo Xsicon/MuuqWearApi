@@ -26,8 +26,11 @@ public class ProductService : IProductService
         try
         {
             var baseParams = BuildFilterParameters(filter);
-
-            var countResult = await _client.Rpc("get_products_count", baseParams);
+            var countParams = new Dictionary<string, object>(baseParams)
+        {
+            { "p_include_tickets", filter.IncludeTickets }
+        };
+            var countResult = await _client.Rpc("get_products_count", countParams);
             var totalCount = 0;
             if (!int.TryParse(countResult.Content?.Trim('"'), out totalCount))
                 totalCount = 0;
@@ -37,7 +40,8 @@ public class ProductService : IProductService
         {
             { "p_sort_by",   filter.SortBy ?? "newest" },
             { "p_page_size", filter.PageSize },
-            { "p_offset",    offset }
+            { "p_offset",    offset },
+            { "p_include_tickets", filter.IncludeTickets }
         };
 
             var dataResult = await _client.Rpc("get_products", dataParams);
@@ -511,11 +515,12 @@ public class ProductService : IProductService
     {
         try
         {
-            List<Product> relatedProducts;
+            var relatedProducts = new List<Product>();
 
+            // STEP 1 — Try to fetch products from the same category (if there is one)
             if (categoryId.HasValue)
             {
-                var result = await _client
+                var sameCategoryResult = await _client
                     .From<Product>()
                     .Filter("category_id",
                         Supabase.Postgrest.Constants.Operator.Equals,
@@ -523,71 +528,68 @@ public class ProductService : IProductService
                     .Filter("id",
                         Supabase.Postgrest.Constants.Operator.NotEqual,
                         productId.ToString())
-                    .Filter("is_deleted", Supabase.Postgrest.Constants.Operator.Equals, "false")
                     .Filter("is_active",
                         Supabase.Postgrest.Constants.Operator.Equals,
                         "true")
+                    .Filter("is_deleted",
+                        Supabase.Postgrest.Constants.Operator.Equals,
+                        "false")
+                    .Filter("is_ticket",
+                        Supabase.Postgrest.Constants.Operator.Equals,
+                        "false")
                     .Order("created_at",
                         Supabase.Postgrest.Constants.Ordering.Descending)
                     .Limit(4)
                     .Get();
 
-                relatedProducts = result.Models;
-
-                if (relatedProducts.Count < 4)
-                {
-                    // how many more do we need
-                    var remaining = 4 - relatedProducts.Count;
-
-                    // ids to exclude — current product + already fetched
-                    var excludeIds = relatedProducts
-                        .Select(p => p.Id.ToString())
-                        .ToList();
-                    excludeIds.Add(productId.ToString());
-
-                    // fetch remaining from other categories
-                    var fillResult = await _client
-                        .From<Product>()
-                        .Filter("id",
-                            Supabase.Postgrest.Constants.Operator.NotEqual,
-                            productId.ToString())
-                        .Filter("is_active",
-                            Supabase.Postgrest.Constants.Operator.Equals,
-                            "true")
-                        .Filter("is_deleted", Supabase.Postgrest.Constants.Operator.Equals,
-                            "false")
-                        .Order("created_at",
-                            Supabase.Postgrest.Constants.Ordering.Descending)
-                        .Limit(remaining)
-                        .Get();
-
-                    relatedProducts.AddRange(fillResult.Models);
-                }
+                relatedProducts.AddRange(sameCategoryResult.Models);
             }
-            else
+
+            // STEP 2 — If we still need more, fill from any category
+            // STEP 2 — If we still need more, fill from any category
+            if (relatedProducts.Count < 4)
             {
-                var result = await _client
+                var remaining = 4 - relatedProducts.Count;
+
+                // Build the exclude list: current product + already fetched
+                var excludeIds = relatedProducts
+                    .Select(p => p.Id.ToString())
+                    .ToList();
+                excludeIds.Add(productId.ToString());
+
+                var query = _client
                     .From<Product>()
-                    .Filter("id",
-                        Supabase.Postgrest.Constants.Operator.NotEqual,
-                        productId.ToString())
                     .Filter("is_active",
                         Supabase.Postgrest.Constants.Operator.Equals,
                         "true")
-                    .Filter("is_deleted", Supabase.Postgrest.Constants.Operator.Equals, "false")
+                    .Filter("is_deleted",
+                        Supabase.Postgrest.Constants.Operator.Equals,
+                        "false")
+                    .Filter("is_ticket",
+                        Supabase.Postgrest.Constants.Operator.Equals,
+                        "false");
+
+                // Chain a NotEqual filter for each ID to exclude
+                foreach (var id in excludeIds)
+                {
+                    query = query.Filter("id",
+                        Supabase.Postgrest.Constants.Operator.NotEqual,
+                        id);
+                }
+
+                var fillResult = await query
                     .Order("created_at",
                         Supabase.Postgrest.Constants.Ordering.Descending)
-                    .Limit(4)
+                    .Limit(remaining)
                     .Get();
 
-                relatedProducts = result.Models;
+                relatedProducts.AddRange(fillResult.Models);
             }
-
-            //  fetch size stock for all related products
+            // STEP 3 — Fetch size stock for all related products in one call
             var productIds = relatedProducts.Select(p => p.Id).ToList();
             var sizeStockMap = await FetchSizeStock(productIds);
 
-            // Step 3 — map to DTOs
+            // STEP 4 — Map entities to DTOs
             var products = relatedProducts.Select(p =>
             {
                 var sizeStock = sizeStockMap.TryGetValue(p.Id, out var stock)
@@ -601,7 +603,7 @@ public class ProductService : IProductService
                     Price = p.Price,
                     Badge = p.Badge,
                     ImageUrl = p.ImageUrl,
-                    Stock = sizeStock.Sum(s => s.Quantity), //  calculated
+                    Stock = sizeStock.Sum(s => s.Quantity),
                     IsActive = p.IsActive,
                     CategoryId = p.CategoryId,
                     Description = p.Description

@@ -15,4 +15,5 @@ public class ProductFilterDTO
     public string? Sizes { get; set; }
     // sorting
     public string? SortBy { get; set; } = "featured";
+    public bool IncludeTickets { get; set; } = false;
 }

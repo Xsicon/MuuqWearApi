@@ -71,7 +71,19 @@ public class ContentService : IContentService
                             Status = x.Status,
                             Views = x.Views,
                             CreatedAt = x.CreatedAt,
-                            PublishedAt = x.PublishedAt
+                            PublishedAt = x.PublishedAt,
+                            Designer = x.Designer,
+                            Year = x.Year,
+                            Inspiration = x.Inspiration,
+                            Collection = x.Collection,
+                            SecondImageUrl = x.SecondImageUrl,
+                            TechnicalFabric = x.TechnicalFabric,
+                            TechnicalTechniques = x.TechnicalTechniques,
+                            TechnicalProduction = x.TechnicalProduction,
+                            TechnicalAvailability = x.TechnicalAvailability,
+                            ImageUrl = x.ImageUrl
+
+
                         }).ToList(),
 
                 _ => new List<ContentItemDTO>()
@@ -227,7 +239,18 @@ public class ContentService : IContentService
                             Title = request.Title,
                             Content = request.Content,
                             Status = "draft",
-                            CreatedAt = DateTime.UtcNow
+                            CreatedAt = DateTime.UtcNow,
+                            Designer = request.Designer,
+                            Year = request.Year,
+                            Inspiration = request.Inspiration,
+                            Collection = request.Collection,
+                            SecondImageUrl = request.SecondImageUrl,
+                            TechnicalFabric = request.TechnicalFabric,
+                            TechnicalTechniques = request.TechnicalTechniques,
+                            TechnicalProduction = request.TechnicalProduction,
+                            TechnicalAvailability = request.TechnicalAvailability,
+                            ImageUrl = request.ImageUrl
+
                         })).Models.FirstOrDefault();
                     if (dh != null)
                         created = new ContentItemDTO
@@ -238,7 +261,18 @@ public class ContentService : IContentService
                             Status = dh.Status,
                             Views = dh.Views,
                             CreatedAt = dh.CreatedAt,
-                            PublishedAt = dh.PublishedAt
+                            PublishedAt = dh.PublishedAt,
+                            Designer = dh.Designer,
+                            Year = dh.Year,
+                            Inspiration = dh.Inspiration,
+                            Collection = dh.Collection,
+                            SecondImageUrl = dh.SecondImageUrl,
+                            TechnicalFabric = dh.TechnicalFabric,
+                            TechnicalTechniques = dh.TechnicalTechniques,
+                            TechnicalProduction = dh.TechnicalProduction,
+                            TechnicalAvailability = dh.TechnicalAvailability,
+                            ImageUrl = dh.ImageUrl
+
                         };
                     break;
             }
@@ -316,6 +350,16 @@ public class ContentService : IContentService
                             id.ToString())
                         .Set(x => x.Title, request.Title)
                         .Set(x => x.Content!, request.Content)
+                        .Set(x => x.Designer!, request.Designer)
+                        .Set(x => x.Year!, request.Year)
+                        .Set(x => x.Inspiration!, request.Inspiration)
+                        .Set(x => x.Collection!, request.Collection)
+                        .Set(x => x.SecondImageUrl!, request.SecondImageUrl)
+                        .Set(x => x.ImageUrl!, request.ImageUrl)
+                        .Set(x => x.TechnicalFabric!, request.TechnicalFabric)
+                        .Set(x => x.TechnicalTechniques!, request.TechnicalTechniques)
+                        .Set(x => x.TechnicalProduction!, request.TechnicalProduction)
+                        .Set(x => x.TechnicalAvailability!, request.TechnicalAvailability)
                         .Update()).Models.FirstOrDefault();
                     if (dh != null)
                         updated = new ContentItemDTO
@@ -326,7 +370,17 @@ public class ContentService : IContentService
                             Status = dh.Status,
                             Views = dh.Views,
                             CreatedAt = dh.CreatedAt,
-                            PublishedAt = dh.PublishedAt
+                            PublishedAt = dh.PublishedAt,
+                            Designer = dh.Designer,
+                            Year = dh.Year,
+                            Inspiration = dh.Inspiration,
+                            Collection = dh.Collection,
+                            SecondImageUrl = dh.SecondImageUrl,
+                            TechnicalFabric = dh.TechnicalFabric,
+                            TechnicalTechniques = dh.TechnicalTechniques,
+                            TechnicalProduction = dh.TechnicalProduction,
+                            TechnicalAvailability = dh.TechnicalAvailability,
+                            ImageUrl = dh.ImageUrl
                         };
                     break;
             }
@@ -647,4 +701,47 @@ public class ContentService : IContentService
             return Response<PaginatedResponse<ContentItemDTO>>.Fail("Error: " + ex.Message);
         }
     }
+    // =============================================
+    // GET PUBLISHED DESIGN HISTORY (for public Archive page)
+    // =============================================
+    public async Task<Response<List<ContentItemDTO>>> GetPublishedDesignHistory()
+    {
+        try
+        {
+            var result = await _client.From<DesignHistory>()
+                .Filter("status", Supabase.Postgrest.Constants.Operator.Equals,
+                    "published")
+                .Order("published_at", Supabase.Postgrest.Constants.Ordering.Descending)
+                .Get();
+
+            var items = result.Models.Select(x => new ContentItemDTO
+            {
+                Id = x.Id,
+                Title = x.Title,
+                Content = x.Content,
+                Status = x.Status,
+                Views = x.Views,
+                CreatedAt = x.CreatedAt,
+                PublishedAt = x.PublishedAt,
+                Designer = x.Designer,
+                Year = x.Year,
+                Inspiration = x.Inspiration,
+                Collection = x.Collection,
+                SecondImageUrl = x.SecondImageUrl,
+                TechnicalFabric = x.TechnicalFabric,
+                TechnicalTechniques = x.TechnicalTechniques,
+                TechnicalProduction = x.TechnicalProduction,
+                TechnicalAvailability = x.TechnicalAvailability,
+                ImageUrl = x.ImageUrl
+            }).ToList();
+
+            return Response<List<ContentItemDTO>>.SuccessResponse(
+                items, "Design history fetched");
+        }
+        catch (Exception ex)
+        {
+            return Response<List<ContentItemDTO>>.Fail("Error: " + ex.Message);
+        }
+    }
+
 }

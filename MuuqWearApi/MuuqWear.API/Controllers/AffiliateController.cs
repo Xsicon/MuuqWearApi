@@ -284,7 +284,7 @@ public class AffiliateController : BaseController
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ [Controller] GetPartnerStoreProducts error: {ex.Message}");
+            Console.WriteLine($"[Controller] GetPartnerStoreProducts error: {ex.Message}");
             return HandleResponse(Response<PaginatedResponse<PartnerStoreProductDTO>>.Fail(
                 "Failed to load products"));
         }

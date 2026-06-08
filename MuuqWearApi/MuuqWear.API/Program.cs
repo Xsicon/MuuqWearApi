@@ -46,6 +46,7 @@ builder.Services.AddScoped<IAffiliateService, AffiliateService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IAdminBadgeService, AdminBadgeService>();
+builder.Services.AddScoped<IJobPostingService, JobPostingService>();
 // Add services to the container.
 
 builder.Services.AddControllers();
@@ -123,13 +124,10 @@ builder.Services
         {
             OnAuthenticationFailed = context =>
             {
-                Console.WriteLine(
-                    $"JWT failed: {context.Exception.Message}");
                 return Task.CompletedTask;
             },
             OnTokenValidated = context =>
             {
-                Console.WriteLine("JWT Valid ");
                 return Task.CompletedTask;
             }
         };

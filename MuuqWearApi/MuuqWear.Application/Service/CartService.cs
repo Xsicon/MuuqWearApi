@@ -79,8 +79,13 @@ public class CartService : ICartService
             request.ProductId, request.Size);
 
             if (availableStock < 1)
-                return Response<CartDTO>.Fail(
-                    $"Size {request.Size} is out of stock");
+            {
+                var message = product.IsTicket
+                    ? $"{product.Name} is sold out"
+                    : $"Size {request.Size} is out of stock";
+
+                return Response<CartDTO>.Fail(message);
+            }
 
             // check if same product + size already in cart
             var existing = await _client

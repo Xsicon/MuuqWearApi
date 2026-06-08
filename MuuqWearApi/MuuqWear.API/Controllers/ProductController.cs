@@ -26,8 +26,11 @@ public class ProductController : BaseController
       [FromQuery] string? sizes = null,
       [FromQuery] decimal? minPrice = null,
       [FromQuery] decimal? maxPrice = null,
-      [FromQuery] string? sortBy = null)
+      [FromQuery] string? sortBy = null,
+      [FromQuery] bool includeTickets = false)
     {
+
+
         // build filter object 
         var filter = new ProductFilterDTO
         {
@@ -39,7 +42,8 @@ public class ProductController : BaseController
             MinPrice = minPrice.HasValue && minPrice >= 0 ? minPrice : null,
             MaxPrice = maxPrice.HasValue && maxPrice >= 0 ? maxPrice : null,
             SortBy = new[] { "featured", "price_asc", "price_desc", "newest" }
-                .Contains(sortBy) ? sortBy : "featured"
+                .Contains(sortBy) ? sortBy : "featured",
+            IncludeTickets = includeTickets
         };
 
         var response = await _productService.GetAll(filter);

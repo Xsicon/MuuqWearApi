@@ -18,23 +18,22 @@ public class AdminBadgeService : IAdminBadgeService
     {
         try
         {
-            // Six independent count queries — parallelize
             var pendingOrders = CountOrders();
             var totalCustomers = CountCustomers();
             var totalProducts = CountProducts();
-            //var pendingApps = CountPendingApplications();
-            //var activeChats = CountActiveChats();
+            var affiliateCounts = CountAffiliateApplications();
             var openTickets = CountOpenTickets();
 
             await Task.WhenAll(
                 pendingOrders, totalCustomers, totalProducts,
-                 openTickets);
+                affiliateCounts, openTickets);
 
             var dto = new AdminBadgeCountsDTO
             {
                 PendingOrders = pendingOrders.Result,
                 TotalCustomers = totalCustomers.Result,
                 TotalProducts = totalProducts.Result,
+                AffiliateCounts = affiliateCounts.Result,
                 OpenTickets = openTickets.Result
             };
 
@@ -70,7 +69,8 @@ public class AdminBadgeService : IAdminBadgeService
             { "p_category_id", null! },
             { "p_size_filter", "" },
             { "p_min_price", 0 },
-            { "p_max_price", 999999 }
+            { "p_max_price", 999999 },
+            {"p_include_tickets",false }
         });
 
     //private Task<int> CountPendingApplications() =>
@@ -85,6 +85,43 @@ public class AdminBadgeService : IAdminBadgeService
             { "p_status", "open" }
         });
 
+
+    private async Task<AffiliateCountsDTO> CountAffiliateApplications()
+    {
+        try
+        {
+            var rows = await CallRpcArray<StatusCountRow>(
+                "get_affiliate_application_counts", null);
+
+            var counts = new AffiliateCountsDTO();
+
+            foreach (var row in rows)
+            {
+                switch (row.Status)
+                {
+                    case "pending": counts.Pending = row.Count; break;
+                    case "approved": counts.Approved = row.Count; break;
+                    case "rejected": counts.Rejected = row.Count; break;
+                    case "waitlisted": counts.Waitlisted = row.Count; break;
+                }
+            }
+
+            return counts;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[AdminBadge] CountAffiliateApplications error: {ex.Message}");
+            return new AffiliateCountsDTO();
+        }
+    }
+
+    private class StatusCountRow
+    {
+        public string Status { get; set; } = string.Empty;
+        public int Count { get; set; }
+    }
+
+    // Internal helper class — keep private to the service file
     /// <summary>
     /// Calls a SQL function that returns a single int. Returns 0 on parse
     /// failure — defensive for navbar resilience.
@@ -94,5 +131,20 @@ public class AdminBadgeService : IAdminBadgeService
         var result = await _adminClient.Rpc(functionName, parameters);
         var content = result.Content?.Trim('"') ?? "0";
         return int.TryParse(content, out var value) ? value : 0;
+    }
+
+    private async Task<List<T>> CallRpcArray<T>(
+    string functionName, Dictionary<string, object>? parameters)
+    {
+        var result = await _adminClient.Rpc(functionName, parameters);
+        if (result?.Content == null) return new List<T>();
+
+        return System.Text.Json.JsonSerializer
+            .Deserialize<List<T>>(result.Content,
+                new System.Text.Json.JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                })
+            ?? new List<T>();
     }
 }

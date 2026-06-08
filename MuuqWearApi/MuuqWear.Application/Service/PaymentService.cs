@@ -117,7 +117,6 @@ public class PaymentService : IPaymentService
 
             default:
                 // Many other event types exist; we ignore them silently
-                Console.WriteLine($"[Webhook] Ignoring event type: {stripeEvent.Type}");
                 return Response<bool>.SuccessResponse(true, "Event ignored");
         }
     }
@@ -131,12 +130,9 @@ public class PaymentService : IPaymentService
         if (!intent.Metadata.TryGetValue("order_id", out var orderIdStr) ||
             !Guid.TryParse(orderIdStr, out var orderId))
         {
-            Console.WriteLine(
-                $"[Webhook] PaymentIntent {intent.Id} has no order_id metadata");
             return Response<bool>.Fail("order_id not found in metadata");
         }
 
-        Console.WriteLine($"[Webhook] Finalizing order {orderId}");
         return await _orderService.FinalizeOrder(orderId);
     }
 
@@ -162,7 +158,6 @@ public class PaymentService : IPaymentService
         {
             order.PaymentStatus = "failed";
             await _client.From<Model.Models.Order.Order>().Update(order);
-            Console.WriteLine($"[Webhook] Marked order {orderId} as payment_failed");
         }
 
         return Response<bool>.SuccessResponse(true, "Failure recorded");
