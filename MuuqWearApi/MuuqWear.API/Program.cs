@@ -47,6 +47,7 @@ builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IAdminBadgeService, AdminBadgeService>();
 builder.Services.AddScoped<IJobPostingService, JobPostingService>();
+builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
 // Add services to the container.
 
 builder.Services.AddControllers();
