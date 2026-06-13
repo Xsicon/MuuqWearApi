@@ -139,17 +139,14 @@ public class ProductController : BaseController
         if (id == Guid.Empty)
             return BadRequest(Response<List<ProductDTO>>.Fail("Invalid product id"));
 
-        var productResponse = await _productService.GetById(id);
-
-        if (!productResponse.Success)
-            return NotFound(Response<List<ProductDTO>>.Fail("Product not found"));
-
-        var categoryId = productResponse.Data?.CategoryId;
-
-        var response = await _productService.GetRelated(id, categoryId);
+        var response = await _productService.GetRelated(id, categoryId: null);
 
         if (!response.Success)
+        {
+            if (response.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
+                return NotFound(response);
             return BadRequest(response);
+        }
 
         return HandleResponse(response);
     }
