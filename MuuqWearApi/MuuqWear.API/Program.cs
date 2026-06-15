@@ -26,6 +26,7 @@ var serviceRoleKey = builder.Configuration["Supabase:ServiceRoleKey"];
 
 var options = new SupabaseOptions { AutoRefreshToken = false, AutoConnectRealtime = true, Schema = "MuuqWear" };
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddMemoryCache();
 builder.Services.AddScoped<SupabaseClientFactory>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IProductService, ProductService>();

@@ -646,41 +646,11 @@ public class ContentService : IContentService
     {
         try
         {
-            // Build the base query with filters
-            var query = _client.From<JournalArticle>()
-                .Filter("status", Supabase.Postgrest.Constants.Operator.Equals,
-                    "published");
-
-            if (!string.IsNullOrEmpty(category))
-                query = query.Filter("category",
-                    Supabase.Postgrest.Constants.Operator.Equals, category);
-
-            // Get total count with filters applied
-            var countResult = await query
-                .Get();
-            var totalCount = countResult.Models.Count;
-
-            // Apply ordering and pagination, THEN call Get() once
             var offset = (page - 1) * pageSize;
-            var result = await query
-                .Order("published_at", Supabase.Postgrest.Constants.Ordering.Descending)
-                .Range(offset, offset + pageSize - 1)
-                .Get();
 
-            var items = result.Models
-    .Where(x => x.Status.Equals("published", StringComparison.OrdinalIgnoreCase))
-    .Select(x => new ContentItemDTO
-    {
-        Id = x.Id,
-        Title = x.Title,
-        Content = x.Content,
-        Category = x.Category,
-        ImageUrl = x.ImageUrl,
-        Status = x.Status,
-        Views = x.Views,
-        CreatedAt = x.CreatedAt,
-        PublishedAt = x.PublishedAt
-    }).ToList();
+            // Count uses HEAD; run before page GET to avoid parallel PostgREST conflicts.
+            var totalCount = await CountPublishedArticles(category);
+            var items = await FetchPublishedPage(offset, pageSize, category);
 
             var totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
 
@@ -700,6 +670,66 @@ public class ContentService : IContentService
         {
             return Response<PaginatedResponse<ContentItemDTO>>.Fail("Error: " + ex.Message);
         }
+    }
+
+    private async Task<int> CountPublishedArticles(string? category)
+    {
+        var query = _client.From<JournalArticle>()
+            .Filter("status", Supabase.Postgrest.Constants.Operator.Equals,
+                "published");
+
+        if (!string.IsNullOrEmpty(category))
+            query = query.Filter("category",
+                Supabase.Postgrest.Constants.Operator.Equals, category);
+
+        try
+        {
+            return await query.Count(Supabase.Postgrest.Constants.CountType.Exact);
+        }
+        catch
+        {
+            var fallbackQuery = _client.From<JournalArticle>()
+                .Filter("status", Supabase.Postgrest.Constants.Operator.Equals,
+                    "published");
+
+            if (!string.IsNullOrEmpty(category))
+                fallbackQuery = fallbackQuery.Filter("category",
+                    Supabase.Postgrest.Constants.Operator.Equals, category);
+
+            var rows = await fallbackQuery.Get();
+            return rows.Models.Count;
+        }
+    }
+
+    private async Task<List<ContentItemDTO>> FetchPublishedPage(
+        int offset, int pageSize, string? category)
+    {
+        var query = _client.From<JournalArticle>()
+            .Filter("status", Supabase.Postgrest.Constants.Operator.Equals,
+                "published");
+
+        if (!string.IsNullOrEmpty(category))
+            query = query.Filter("category",
+                Supabase.Postgrest.Constants.Operator.Equals, category);
+
+        var result = await query
+            .Order("published_at", Supabase.Postgrest.Constants.Ordering.Descending)
+            .Range(offset, offset + pageSize - 1)
+            .Get();
+
+        return result.Models
+            .Where(x => x.Status.Equals("published", StringComparison.OrdinalIgnoreCase))
+            .Select(x => new ContentItemDTO
+            {
+                Id = x.Id,
+                Title = x.Title,
+                Category = x.Category,
+                ImageUrl = x.ImageUrl,
+                Status = x.Status,
+                Views = x.Views,
+                CreatedAt = x.CreatedAt,
+                PublishedAt = x.PublishedAt
+            }).ToList();
     }
     // =============================================
     // GET PUBLISHED DESIGN HISTORY (for public Archive page)

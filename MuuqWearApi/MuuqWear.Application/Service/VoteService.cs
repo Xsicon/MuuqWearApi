@@ -1,5 +1,7 @@
-﻿using MuuqWear.API.Shared;
+﻿using Microsoft.Extensions.Caching.Memory;
+using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
+using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.VoteDTO;
 using MuuqWear.Model.Models.PreOrderInterest;
 using MuuqWear.Model.Models.UserVote;
@@ -10,10 +12,12 @@ namespace MuuqWear.Application.Service;
 public class VoteService : IVoteService
 {
     private readonly Supabase.Client _client;
+    private readonly IMemoryCache _cache;
 
-    public VoteService(SupabaseClientFactory factory)
+    public VoteService(SupabaseClientFactory factory, IMemoryCache cache)
     {
         _client = factory.CreateClient();
+        _cache = cache;
     }
 
     // =============================================
@@ -23,8 +27,7 @@ public class VoteService : IVoteService
     {
         try
         {
-            // Step 1 — fetch active vote items
-            var result = await _client
+            var itemsTask = _client
                 .From<VoteItem>()
                 .Filter("status",
                     Supabase.Postgrest.Constants.Operator.Equals,
@@ -33,31 +36,58 @@ public class VoteService : IVoteService
                     Supabase.Postgrest.Constants.Ordering.Descending)
                 .Get();
 
-            // Step 2 — fetch user votes in one query
-            var userVotes = await _client
+            if (userId == Guid.Empty)
+            {
+                var publicResult = await itemsTask;
+                var publicItems = publicResult.Models.Select(v => new VoteItemDTO
+                {
+                    Id = v.Id,
+                    StyleName = v.StyleName,
+                    Subtitle = v.Subtitle,
+                    Description = v.Description,
+                    ImageUrl = v.ImageUrl,
+                    Tag = v.Tag,
+                    VoteCount = v.VoteCount,
+                    ColorOptions = v.ColorOptions ?? new List<string>(),
+                    Status = v.Status,
+                    Season = v.Season,
+                    CreatedAt = v.CreatedAt,
+                    HasVoted = false,
+                    HasPreOrdered = false
+                }).ToList();
+
+                return Response<List<VoteItemDTO>>
+                    .SuccessResponse(publicItems, "Active items fetched");
+            }
+
+            var userVotesTask = _client
                 .From<UserVote>()
                 .Filter("user_id",
                     Supabase.Postgrest.Constants.Operator.Equals,
                     userId.ToString())
                 .Get();
 
-            var votedIds = userVotes.Models
-                .Select(v => v.VoteItemId)
-                .ToHashSet();
-
-            // Step 3 — fetch user pre-orders in one query
-            var preOrders = await _client
+            var preOrdersTask = _client
                 .From<PreOrderInterest>()
                 .Filter("user_id",
                     Supabase.Postgrest.Constants.Operator.Equals,
                     userId.ToString())
                 .Get();
 
+            await Task.WhenAll(itemsTask, userVotesTask, preOrdersTask);
+
+            var result = await itemsTask;
+            var userVotes = await userVotesTask;
+            var preOrders = await preOrdersTask;
+
+            var votedIds = userVotes.Models
+                .Select(v => v.VoteItemId)
+                .ToHashSet();
+
             var preOrderedIds = preOrders.Models
                 .Select(p => p.VoteItemId)
                 .ToHashSet();
 
-            // Step 4 — map to DTOs
             var items = result.Models.Select(v => new VoteItemDTO
             {
                 Id = v.Id,
@@ -67,7 +97,7 @@ public class VoteService : IVoteService
                 ImageUrl = v.ImageUrl,
                 Tag = v.Tag,
                 VoteCount = v.VoteCount,
-                ColorOptions = v.ColorOptions ?? new List<string>(), // ← direct 
+                ColorOptions = v.ColorOptions ?? new List<string>(),
                 Status = v.Status,
                 Season = v.Season,
                 CreatedAt = v.CreatedAt,
@@ -136,6 +166,12 @@ public class VoteService : IVoteService
     // =============================================
     public async Task<Response<VoteStatsDTO>> GetStats()
     {
+        if (_cache.TryGetValue(ApiCacheKeys.VoteStats, out VoteStatsDTO? cached)
+            && cached != null)
+        {
+            return Response<VoteStatsDTO>.SuccessResponse(cached, "Stats fetched");
+        }
+
         try
         {
             var result = await _client.Rpc("get_vote_stats",
@@ -153,6 +189,8 @@ public class VoteService : IVoteService
                     result.Content ?? "[]", options)
                 ?.FirstOrDefault()
                 ?? new VoteStatsDTO();
+
+            _cache.Set(ApiCacheKeys.VoteStats, stats, ApiCacheKeys.ReadTtl);
 
             return Response<VoteStatsDTO>
                 .SuccessResponse(stats, "Stats fetched");
@@ -186,6 +224,8 @@ public class VoteService : IVoteService
             if (!int.TryParse(result.Content?.Trim('"'), out var newCount))
                 return Response<VoteItemDTO>.Fail(
                     "Failed to cast vote. Please try again.");
+
+            _cache.Remove(ApiCacheKeys.VoteStats);
 
             return Response<VoteItemDTO>.SuccessResponse(
                 new VoteItemDTO

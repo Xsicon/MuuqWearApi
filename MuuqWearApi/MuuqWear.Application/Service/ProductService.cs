@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Caching.Memory;
 using MuuqWear.API.DTO.ProductDTO;
 using MuuqWear.API.Interfaces;
 using MuuqWear.API.Shared;
@@ -13,12 +14,16 @@ public class ProductService : IProductService
 {
     private readonly Supabase.Client _client;
     private readonly Supabase.Client _adminClient;
+    private readonly IMemoryCache _cache;
 
-    public ProductService(SupabaseClientFactory factory, SupabaseAdminClientFactory adminClient)
+    public ProductService(
+        SupabaseClientFactory factory,
+        SupabaseAdminClientFactory adminClient,
+        IMemoryCache cache)
     {
         _client = factory.CreateClient();
         _adminClient = adminClient.CreateClient();
-
+        _cache = cache;
     }
 
     public async Task<Response<PaginatedResponse<ProductDTO>>> GetAll(ProductFilterDTO filter)
@@ -30,10 +35,7 @@ public class ProductService : IProductService
         {
             { "p_include_tickets", filter.IncludeTickets }
         };
-            var countResult = await _client.Rpc("get_products_count", countParams);
-            var totalCount = 0;
-            if (!int.TryParse(countResult.Content?.Trim('"'), out totalCount))
-                totalCount = 0;
+            var countTask = _client.Rpc("get_products_count", countParams);
 
             var offset = (filter.Page - 1) * filter.PageSize;
             var dataParams = new Dictionary<string, object>(baseParams)
@@ -44,7 +46,12 @@ public class ProductService : IProductService
             { "p_include_tickets", filter.IncludeTickets }
         };
 
-            var dataResult = await _client.Rpc("get_products", dataParams);
+            var dataTask = _client.Rpc("get_products", dataParams);
+
+            await Task.WhenAll(countTask, dataTask);
+
+            var countResult = await countTask;
+            var dataResult = await dataTask;
 
             var options = new System.Text.Json.JsonSerializerOptions
             {
@@ -56,6 +63,10 @@ public class ProductService : IProductService
                 .Deserialize<List<ProductDTO>>(
                     dataResult.Content ?? "[]", options)
                 ?? new List<ProductDTO>();
+
+            var totalCount = 0;
+            if (!int.TryParse(countResult.Content?.Trim('"'), out totalCount))
+                totalCount = 0;
 
             //  fetch size stock for all products in one query
             var productIds = products.Select(p => p.Id).ToList();
@@ -106,10 +117,37 @@ public class ProductService : IProductService
 
     public async Task<Response<HomeProductsDTO>> GetHomeProducts()
     {
+        if (_cache.TryGetValue(ApiCacheKeys.HomeProducts, out HomeProductsDTO? cached)
+            && cached != null)
+        {
+            return Response<HomeProductsDTO>.SuccessResponse(
+                cached, "Home products fetched");
+        }
+
         try
         {
-            // fetch 6 new arrivals
-            var newArrivalsResult = await _client
+            var homeProductsResponse = await FetchHomeProductsFromDb();
+            if (!homeProductsResponse.Success || homeProductsResponse.Data == null)
+                return homeProductsResponse;
+
+            _cache.Set(
+                ApiCacheKeys.HomeProducts,
+                homeProductsResponse.Data,
+                ApiCacheKeys.ReadTtl);
+
+            return homeProductsResponse;
+        }
+        catch (Exception ex)
+        {
+            return Response<HomeProductsDTO>.Fail("Error: " + ex.Message);
+        }
+    }
+
+    private async Task<Response<HomeProductsDTO>> FetchHomeProductsFromDb()
+    {
+        try
+        {
+            var newArrivalsTask = _client
                 .From<Product>()
                 .Filter("is_new_arrival", Supabase.Postgrest.Constants.Operator.Equals, "true")
                 .Filter("is_active", Supabase.Postgrest.Constants.Operator.Equals, "true")
@@ -118,8 +156,7 @@ public class ProductService : IProductService
                 .Range(0, 5)
                 .Get();
 
-            // fetch 6 featured products
-            var featuredResult = await _client
+            var featuredTask = _client
                 .From<Product>()
                 .Filter("is_featured", Supabase.Postgrest.Constants.Operator.Equals, "true")
                 .Filter("is_active", Supabase.Postgrest.Constants.Operator.Equals, "true")
@@ -128,7 +165,7 @@ public class ProductService : IProductService
                 .Range(0, 5)
                 .Get();
 
-            var bestSellersResult = await _client
+            var bestSellersTask = _client
                 .From<Product>()
                 .Filter("is_best_seller", Supabase.Postgrest.Constants.Operator.Equals, "true")
                 .Filter("is_active", Supabase.Postgrest.Constants.Operator.Equals, "true")
@@ -136,6 +173,12 @@ public class ProductService : IProductService
                 .Order("created_at", Supabase.Postgrest.Constants.Ordering.Descending)
                 .Range(0, 5)
                 .Get();
+
+            await Task.WhenAll(newArrivalsTask, featuredTask, bestSellersTask);
+
+            var newArrivalsResult = await newArrivalsTask;
+            var featuredResult = await featuredTask;
+            var bestSellersResult = await bestSellersTask;
 
             //  collect all product IDs
             var allProductIds = newArrivalsResult.Models
@@ -228,6 +271,9 @@ public class ProductService : IProductService
             return Response<HomeProductsDTO>.Fail("Error: " + ex.Message);
         }
     }
+
+    private void InvalidateHomeProductsCache() =>
+        _cache.Remove(ApiCacheKeys.HomeProducts);
     public async Task<Response<ProductDTO>> Add(AddProductDTO request)
     {
         try
@@ -324,6 +370,8 @@ public class ProductService : IProductService
                 SizeStock = sizeStock
             };
 
+            InvalidateHomeProductsCache();
+
             return Response<ProductDTO>.SuccessResponse(
                 productDTO, "Product added successfully");
         }
@@ -415,6 +463,8 @@ public class ProductService : IProductService
 
             };
 
+            InvalidateHomeProductsCache();
+
             return Response<ProductDTO>.SuccessResponse(productDTO, "Product updated successfully");
         }
         catch (Exception ex)
@@ -435,6 +485,8 @@ public class ProductService : IProductService
              .Set(p => p.DeletedAt!, DateTime.UtcNow)
              .Update();
 
+
+            InvalidateHomeProductsCache();
 
             return Response<bool>.SuccessResponse(true, "Product deleted successfully");
         }
@@ -457,13 +509,19 @@ public class ProductService : IProductService
             if (productResult == null)
                 return Response<ProductDTO>.Fail("Product not found");
 
-            var imagesResult = await _client
+            var imagesTask = _client
                 .From<ProductImage>()
                 .Filter("product_id",
                     Supabase.Postgrest.Constants.Operator.Equals, id.ToString())
                 .Order("sort_order", Supabase.Postgrest.Constants.Ordering.Ascending)
                 .Get();
 
+            var sizeStockTask = FetchSizeStock(new List<Guid> { id });
+
+            await Task.WhenAll(imagesTask, sizeStockTask);
+
+            var imagesResult = await imagesTask;
+            var sizeStockMap = await sizeStockTask;
             var images = imagesResult.Models.Select(img => new ProductImageDTO
             {
                 Id = img.Id,
@@ -472,8 +530,6 @@ public class ProductService : IProductService
                 SortOrder = img.SortOrder
             }).ToList();
 
-            //  fetch size stock for this product
-            var sizeStockMap = await FetchSizeStock(new List<Guid> { id });
             var sizeStock = sizeStockMap.TryGetValue(id, out var stock)
                 ? stock
                 : new List<SizeStockDTO>();
@@ -515,6 +571,24 @@ public class ProductService : IProductService
     {
         try
         {
+            if (!categoryId.HasValue)
+            {
+                var sourceProduct = await _client
+                    .From<Product>()
+                    .Filter("id",
+                        Supabase.Postgrest.Constants.Operator.Equals,
+                        productId.ToString())
+                    .Filter("is_deleted",
+                        Supabase.Postgrest.Constants.Operator.Equals,
+                        "false")
+                    .Single();
+
+                if (sourceProduct == null)
+                    return Response<List<ProductDTO>>.Fail("Product not found");
+
+                categoryId = sourceProduct.CategoryId;
+            }
+
             var relatedProducts = new List<Product>();
 
             // STEP 1 — Try to fetch products from the same category (if there is one)

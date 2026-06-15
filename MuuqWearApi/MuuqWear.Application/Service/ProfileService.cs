@@ -1,6 +1,8 @@
-﻿using MuuqWear.API.Interfaces;
+﻿using Microsoft.Extensions.Caching.Memory;
+using MuuqWear.API.Interfaces;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
+using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.ProfileDTO;
 using MuuqWear.Model.Models.Profiles;
 using static System.Runtime.InteropServices.JavaScript.JSType;
@@ -10,10 +12,12 @@ namespace MuuqWear.API.Service;
 public class ProfileService : IProfileService
 {
     private readonly Supabase.Client _client;
+    private readonly IMemoryCache _cache;
 
-    public ProfileService(SupabaseClientFactory factory)
+    public ProfileService(SupabaseClientFactory factory, IMemoryCache cache)
     {
         _client = factory.CreateClient();
+        _cache = cache;
     }
 
     // =============================================
@@ -123,6 +127,10 @@ public class ProfileService : IProfileService
     // =============================================
     public async Task UpdateLastActive(Guid userId)
     {
+        var cacheKey = ApiCacheKeys.LastActive(userId);
+        if (_cache.TryGetValue(cacheKey, out _))
+            return;
+
         await _client
             .From<Profiles>()
             .Filter("id",
@@ -130,6 +138,8 @@ public class ProfileService : IProfileService
                 userId.ToString())
             .Set(p => p.LastActiveAt!, DateTime.UtcNow)
             .Update();
+
+        _cache.Set(cacheKey, true, ApiCacheKeys.LastActiveThrottle);
     }
 
     public async Task UpdateNotificationsReadAt(Guid userId)
