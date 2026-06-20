@@ -35,23 +35,21 @@ public class ProductService : IProductService
         {
             { "p_include_tickets", filter.IncludeTickets }
         };
-            var countTask = _client.Rpc("get_products_count", countParams);
 
-            var offset = (filter.Page - 1) * filter.PageSize;
-            var dataParams = new Dictionary<string, object>(baseParams)
-        {
-            { "p_sort_by",   filter.SortBy ?? "newest" },
-            { "p_page_size", filter.PageSize },
-            { "p_offset",    offset },
-            { "p_include_tickets", filter.IncludeTickets }
-        };
+            var usePriceDescWorkaround = string.Equals(
+                filter.SortBy, "price_desc", StringComparison.OrdinalIgnoreCase);
 
-            var dataTask = _client.Rpc("get_products", dataParams);
+            int totalCount;
+            Supabase.Postgrest.Responses.BaseResponse dataResult;
 
-            await Task.WhenAll(countTask, dataTask);
-
-            var countResult = await countTask;
-            var dataResult = await dataTask;
+            if (usePriceDescWorkaround)
+            {
+                (dataResult, totalCount) = await FetchPriceDescPage(baseParams, filter, countParams);
+            }
+            else
+            {
+                (dataResult, totalCount) = await FetchProductsPage(baseParams, filter, countParams);
+            }
 
             var options = new System.Text.Json.JsonSerializerOptions
             {
@@ -64,9 +62,8 @@ public class ProductService : IProductService
                     dataResult.Content ?? "[]", options)
                 ?? new List<ProductDTO>();
 
-            var totalCount = 0;
-            if (!int.TryParse(countResult.Content?.Trim('"'), out totalCount))
-                totalCount = 0;
+            if (usePriceDescWorkaround && products.Count > 1)
+                products.Reverse();
 
             //  fetch size stock for all products in one query
             var productIds = products.Select(p => p.Id).ToList();
@@ -99,6 +96,50 @@ public class ProductService : IProductService
             return Response<PaginatedResponse<ProductDTO>>
                 .Fail("Error: " + ex.Message);
         }
+    }
+
+    private async Task<(Supabase.Postgrest.Responses.BaseResponse DataResult, int TotalCount)> FetchProductsPage(
+        Dictionary<string, object> baseParams,
+        ProductFilterDTO filter,
+        Dictionary<string, object> countParams)
+    {
+        var countTask = _client.Rpc("get_products_count", countParams);
+        var dataTask = _client.Rpc("get_products", new Dictionary<string, object>(baseParams)
+        {
+            { "p_sort_by", filter.SortBy ?? "newest" },
+            { "p_page_size", filter.PageSize },
+            { "p_offset", (filter.Page - 1) * filter.PageSize },
+            { "p_include_tickets", filter.IncludeTickets }
+        });
+
+        await Task.WhenAll(countTask, dataTask);
+
+        var countResult = await countTask;
+        if (!int.TryParse(countResult.Content?.Trim('"'), out var totalCount))
+            totalCount = 0;
+
+        return (await dataTask, totalCount);
+    }
+
+    private async Task<(Supabase.Postgrest.Responses.BaseResponse DataResult, int TotalCount)> FetchPriceDescPage(
+        Dictionary<string, object> baseParams,
+        ProductFilterDTO filter,
+        Dictionary<string, object> countParams)
+    {
+        // Supabase get_products ignores price_desc — fetch price_asc with inverted offset, then reverse.
+        var countResult = await _client.Rpc("get_products_count", countParams);
+        if (!int.TryParse(countResult.Content?.Trim('"'), out var totalCount))
+            totalCount = 0;
+
+        var dataResult = await _client.Rpc("get_products", new Dictionary<string, object>(baseParams)
+        {
+            { "p_sort_by", "price_asc" },
+            { "p_page_size", filter.PageSize },
+            { "p_offset", Math.Max(0, totalCount - filter.Page * filter.PageSize) },
+            { "p_include_tickets", filter.IncludeTickets }
+        });
+
+        return (dataResult, totalCount);
     }
 
     private Dictionary<string, object> BuildFilterParameters(ProductFilterDTO filter)
