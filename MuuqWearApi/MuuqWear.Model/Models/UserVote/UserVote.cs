@@ -15,6 +15,9 @@ public class UserVote : BaseModel
     [Column("user_id")]
     public Guid UserId { get; set; }
 
+    [Column("preferred_color")]
+    public string? PreferredColor { get; set; }
+
     [Column("created_at")]
     public DateTime? CreatedAt { get; set; }
 }
