@@ -80,9 +80,8 @@ public class VoteService : IVoteService
             var userVotes = await userVotesTask;
             var preOrders = await preOrdersTask;
 
-            var votedIds = userVotes.Models
-                .Select(v => v.VoteItemId)
-                .ToHashSet();
+            var userVoteByItem = userVotes.Models
+                .ToDictionary(v => v.VoteItemId, v => v.PreferredColor);
 
             var preOrderedIds = preOrders.Models
                 .Select(p => p.VoteItemId)
@@ -101,8 +100,9 @@ public class VoteService : IVoteService
                 Status = v.Status,
                 Season = v.Season,
                 CreatedAt = v.CreatedAt,
-                HasVoted = votedIds.Contains(v.Id),
-                HasPreOrdered = preOrderedIds.Contains(v.Id)
+                HasVoted = userVoteByItem.ContainsKey(v.Id),
+                HasPreOrdered = preOrderedIds.Contains(v.Id),
+                VotedColor = userVoteByItem.GetValueOrDefault(v.Id)
             }).ToList();
 
             return Response<List<VoteItemDTO>>
@@ -190,6 +190,8 @@ public class VoteService : IVoteService
                 ?.FirstOrDefault()
                 ?? new VoteStatsDTO();
 
+            await EnrichStatsFromVotesAsync(stats);
+
             _cache.Set(ApiCacheKeys.VoteStats, stats, ApiCacheKeys.ReadTtl);
 
             return Response<VoteStatsDTO>
@@ -210,15 +212,22 @@ public class VoteService : IVoteService
     {
         try
         {
+            if (string.IsNullOrWhiteSpace(request.PreferredColor))
+            {
+                return Response<VoteItemDTO>.Fail(
+                    "Please select a color before voting.");
+            }
+
             //  single atomic RPC call
             // insert vote + increment count in one transaction
-            var result = await _client.Rpc(
-                "cast_vote",
-                new Dictionary<string, object>
-                {
+            var rpcParams = new Dictionary<string, object>
+            {
                 { "p_vote_item_id", request.VoteItemId.ToString() },
-                { "p_user_id",      userId.ToString() }
-                });
+                { "p_user_id", userId.ToString() },
+                { "p_preferred_color", request.PreferredColor!.Trim() }
+            };
+
+            var result = await _client.Rpc("cast_vote", rpcParams);
 
             //  RPC returns new vote count as integer
             if (!int.TryParse(result.Content?.Trim('"'), out var newCount))
@@ -232,7 +241,8 @@ public class VoteService : IVoteService
                 {
                     Id = request.VoteItemId,
                     VoteCount = newCount,
-                    HasVoted = true
+                    HasVoted = true,
+                    VotedColor = request.PreferredColor!.Trim()
                 }, "Vote cast successfully");
         }
         catch (Exception ex)
@@ -305,8 +315,63 @@ public class VoteService : IVoteService
     }
 
     // =============================================
-    // PRIVATE HELPER
+    // PRIVATE HELPERS
     // =============================================
+    private async Task EnrichStatsFromVotesAsync(VoteStatsDTO stats)
+    {
+        var weekStart = GetUtcWeekStart();
+
+        var result = await _client
+            .From<UserVote>()
+            .Get();
+
+        var weekVotes = result.Models
+            .Where(v => v.CreatedAt.HasValue && v.CreatedAt.Value >= weekStart)
+            .ToList();
+
+        if (stats.TotalVotesThisWeek <= 0)
+            stats.TotalVotesThisWeek = weekVotes.Count;
+
+        if (!string.IsNullOrWhiteSpace(stats.MostWantedColor))
+        {
+            stats.MostWantedColor = NormalizeColorHex(stats.MostWantedColor);
+            return;
+        }
+
+        stats.MostWantedColor = weekVotes
+            .Where(v => !string.IsNullOrWhiteSpace(v.PreferredColor))
+            .Select(v => NormalizeColorHex(v.PreferredColor!))
+            .Where(c => !string.IsNullOrEmpty(c))
+            .GroupBy(c => c, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(g => g.Count())
+            .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.Key)
+            .FirstOrDefault();
+    }
+
+    private static DateTime GetUtcWeekStart()
+    {
+        var now = DateTime.UtcNow;
+        var daysSinceMonday = ((int)now.DayOfWeek + 6) % 7;
+        return now.Date.AddDays(-daysSinceMonday);
+    }
+
+    private static string NormalizeColorHex(string color)
+    {
+        var trimmed = color.Trim();
+        if (trimmed.Length == 0)
+            return trimmed;
+
+        if (!trimmed.StartsWith('#') &&
+            trimmed.Length == 6 &&
+            trimmed.All(Uri.IsHexDigit))
+        {
+            return "#" + trimmed;
+        }
+
+        return trimmed;
+    }
+
     //  single responsibility — parses JSON color array
     // e.g. '["#1E2A47","#4A5C7A"]' → List<string>
     private List<string> ParseColors(string? colorJson)

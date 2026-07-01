@@ -21,6 +21,9 @@ public class VoteItemDTO
 
     //  computed — has current user pre-ordered this item
     public bool HasPreOrdered { get; set; }
+
+    // color the current user picked when they voted
+    public string? VotedColor { get; set; }
 }
 
 // ─── VOTE STATS DTO ──────────────────────────────────────────
@@ -37,6 +40,7 @@ public class VoteStatsDTO
 public class CastVoteDTO
 {
     public Guid VoteItemId { get; set; }
+    public string? PreferredColor { get; set; }
 }
 
 // ─── PRE ORDER DTO ───────────────────────────────────────────
