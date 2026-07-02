@@ -8,10 +8,14 @@ namespace MuuqWear.Application.Service;
 public class OrderReturnService : IOrderReturnService
 {
     private readonly Supabase.Client _client;
+    private readonly IRefundService _refundService;
 
-    public OrderReturnService(SupabaseClientFactory factory)
+    public OrderReturnService(
+        SupabaseClientFactory factory,
+        IRefundService refundService)
     {
         _client = factory.CreateClient();
+        _refundService = refundService;
     }
 
     // =============================================
@@ -222,6 +226,7 @@ public class OrderReturnService : IOrderReturnService
             if (status.ToLower() == ReturnStatus.Approved.ToLower())
             {
                 await RestoreStockForOrder(updated.OrderId.Value);
+                await _refundService.CreatePendingRefundFromReturn(updated);
             }
 
             // Step 3 — return DTO inline

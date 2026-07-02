@@ -4,6 +4,7 @@ using Microsoft.IdentityModel.Tokens;
 using MuuqWear.API.DTO;
 using MuuqWear.API.Interfaces;
 using MuuqWear.API.Shared;
+using MuuqWear.Application.Shared;
 using MuuqWear.Model.Models.Profiles;
 using Supabase.Gotrue;
 using System.Net.Http.Json;
@@ -15,11 +16,16 @@ namespace MuuqWear.API.Service;
 public class AuthService : IAuthService
 {
     private readonly Supabase.Client _client;
+    private readonly SupabaseAdminClientFactory _adminClientFactory;
     private readonly IConfiguration _configuration;
 
-    public AuthService(SupabaseClientFactory factory, IConfiguration configuration)
+    public AuthService(
+        SupabaseClientFactory factory,
+        SupabaseAdminClientFactory adminClientFactory,
+        IConfiguration configuration)
     {
         _client = factory.CreateClient();
+        _adminClientFactory = adminClientFactory;
         _configuration = configuration;
     }
 
@@ -84,18 +90,16 @@ public class AuthService : IAuthService
             {
                 fullName = session.User.UserMetadata["full_name"]?.ToString() ?? "";
             }
-            var profile = await _client
-    .From<Profiles>()
-    .Filter("id", Supabase.Postgrest.Constants.Operator.Equals, session.User!.Id!)
-    .Single();
+            var profile = await GetProfileByUserIdAsync(
+                Guid.Parse(session.User!.Id!));
             var authData = new AuthResponseDTO
             {
                 AccessToken = session.AccessToken!,
                 RefreshToken = session.RefreshToken!,
                 Email = session.User?.Email ?? "",
                 UserId = session.User?.Id ?? "",
-                UserName = fullName,
-                Role = profile?.Role!
+                UserName = profile?.FullName ?? fullName,
+                Role = NormalizeRole(profile?.Role)
             };
 
             // fetch role separately — don't let it break OTP flow
@@ -120,19 +124,9 @@ public class AuthService : IAuthService
             if (session?.User == null)
                 return Response<AuthResponseDTO>.Fail("Invalid email or password");
 
-            // fetch role from Profile table
             var userId = Guid.Parse(session.User.Id!);
 
-
-            // Fetch profile safely
-            var response = await _client
-     .From<Profiles>()
-     .Filter("id",
-         Supabase.Postgrest.Constants.Operator.Equals,
-         userId.ToString())
-     .Get();
-
-            var profile = response.Models.FirstOrDefault();
+            var profile = await GetProfileByUserIdAsync(userId);
             if (profile?.IsDeleted == true)
                 return Response<AuthResponseDTO>.Fail(
                     "This account has been deleted. Please contact support.");
@@ -144,7 +138,7 @@ public class AuthService : IAuthService
                 Email = session.User.Email ?? "",
                 UserId = session.User.Id ?? "",
                 UserName = profile?.FullName ?? "",
-                Role = profile?.Role ?? "user"
+                Role = NormalizeRole(profile?.Role)
             };
 
             return Response<AuthResponseDTO>.SuccessResponse(authData, "Login Successful");
@@ -229,12 +223,8 @@ public class AuthService : IAuthService
             if (session?.User == null)
                 return Response<AuthResponseDTO>.Fail("Invalid magic link");
 
-            // fetch role from profile table
-            var profile = await _client
-                .From<Profiles>()
-                .Filter("id", Supabase.Postgrest.Constants.Operator.Equals,
-                    session.User.Id!)
-                .Single();
+            var profile = await GetProfileByUserIdAsync(
+                Guid.Parse(session.User.Id!));
 
             //Insert in Profile
             if (profile == null)
@@ -251,7 +241,8 @@ public class AuthService : IAuthService
                     CreatedAt = DateTime.UtcNow
                 };
 
-                await _client.From<Profiles>().Insert(profile);
+                await _adminClientFactory.CreateClient()
+                    .From<Profiles>().Insert(profile);
             }
 
             var authData = new AuthResponseDTO
@@ -260,11 +251,11 @@ public class AuthService : IAuthService
                 RefreshToken = refreshToken,
                 Email = session.User.Email ?? "",
                 UserId = session.User.Id ?? "",
-                UserName = session.User.UserMetadata
-                    .ContainsKey("full_name")
+                UserName = profile?.FullName
+                    ?? (session.User.UserMetadata.ContainsKey("full_name")
                         ? session.User.UserMetadata["full_name"]?.ToString() ?? ""
-                        : "",
-                Role = profile?.Role ?? "user"
+                        : ""),
+                Role = NormalizeRole(profile?.Role)
             };
 
             return Response<AuthResponseDTO>.SuccessResponse(
@@ -402,28 +393,23 @@ public class AuthService : IAuthService
             var userId = json.GetProperty("user")
                         .GetProperty("id").GetString() ?? "";
 
-            //  check is_deleted after successful token refresh
+            Profiles? profile = null;
             if (!string.IsNullOrEmpty(userId) && Guid.TryParse(userId, out var userGuid))
             {
-                var profileResponse = await _client
-                    .From<Profiles>()
-                    .Where(p => p.Id == userGuid)
-                    .Get();
-
-                var profile = profileResponse.Models.FirstOrDefault();
-                System.Diagnostics.Debug.WriteLine($"RefreshToken check — userId: {userId}");
-                System.Diagnostics.Debug.WriteLine($"Profile found: {profile != null}");
-                System.Diagnostics.Debug.WriteLine($"IsDeleted: {profile?.IsDeleted}");
+                profile = await GetProfileByUserIdAsync(userGuid);
                 if (profile?.IsDeleted == true)
                     return Response<AuthResponseDTO>.Fail(
                         "This account has been deleted.");
             }
+
             var authData = new AuthResponseDTO
             {
                 AccessToken = json.GetProperty("access_token").GetString()!,
                 RefreshToken = json.GetProperty("refresh_token").GetString()!,
                 Email = json.GetProperty("user").GetProperty("email").GetString() ?? "",
-                UserId = json.GetProperty("user").GetProperty("id").GetString() ?? "",
+                UserId = userId,
+                UserName = profile?.FullName ?? "",
+                Role = NormalizeRole(profile?.Role)
             };
 
             return Response<AuthResponseDTO>.SuccessResponse(
@@ -433,5 +419,24 @@ public class AuthService : IAuthService
         {
             return Response<AuthResponseDTO>.Fail("Error: " + ex.Message);
         }
+    }
+
+    private async Task<Profiles?> GetProfileByUserIdAsync(Guid userId)
+    {
+        var adminClient = _adminClientFactory.CreateClient();
+        var response = await adminClient
+            .From<Profiles>()
+            .Filter("id",
+                Supabase.Postgrest.Constants.Operator.Equals,
+                userId.ToString())
+            .Get();
+
+        return response.Models.FirstOrDefault();
+    }
+
+    private static string NormalizeRole(string? role)
+    {
+        var normalized = (role ?? "user").Trim().ToLowerInvariant();
+        return normalized == "admin" ? "admin" : "user";
     }
 }

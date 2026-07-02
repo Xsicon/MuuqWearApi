@@ -18,7 +18,10 @@ public class SupabaseAdminClientFactory
     public Supabase.Client CreateClient()
     {
         var url = _configuration["SupaBase:Url"]!;
-        var serviceRoleKey = _configuration["Supabase:ServiceRoleKey"]!;
+        var serviceRoleKey = _configuration["SupaBase:ServiceRoleKey"]
+            ?? _configuration["Supabase:ServiceRoleKey"]
+            ?? throw new InvalidOperationException(
+                "SupaBase:ServiceRoleKey is not configured.");
 
         var options = new SupabaseOptions
         {

@@ -39,6 +39,7 @@ builder.Services.AddScoped<IProfileService, ProfileService>();
 builder.Services.AddScoped<IContentService, ContentService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IOrderReturnService, OrderReturnService>();
+builder.Services.AddScoped<IRefundService, RefundService>();
 builder.Services.AddScoped<IAdminSettingService, AdminSettingService>();
 builder.Services.AddSingleton<SupabaseAdminClientFactory>();
 builder.Services.AddScoped<IVoteService, VoteService>();
