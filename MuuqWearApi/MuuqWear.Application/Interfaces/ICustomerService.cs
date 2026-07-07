@@ -7,4 +7,9 @@ public interface ICustomerService
 {
     Task<Response<PaginatedResponse<CustomerDTO>>> GetAll(
         string? search, int page, int pageSize);
+
+    Task<Response<List<CustomerNoteDTO>>> GetNotes(Guid customerId);
+
+    Task<Response<CustomerNoteDTO>> CreateNote(
+        Guid customerId, string body, Guid authorUserId);
 }
