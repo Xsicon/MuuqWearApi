@@ -1,5 +1,6 @@
 ﻿using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
+using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.NotificationDTO;
 using MuuqWear.Model.Models.AffiliateApplication;
 using MuuqWear.Model.Models.Order;
@@ -10,11 +11,18 @@ namespace MuuqWear.Application.Service;
 
 public class NotificationService : INotificationService
 {
-    private readonly Supabase.Client _client;
+    private const int LowStockThreshold = 5;
+    private const int LowStockFetchLimit = 10;
 
-    public NotificationService(SupabaseClientFactory factory)
+    private readonly Supabase.Client _client;
+    private readonly Supabase.Client _adminClient;
+
+    public NotificationService(
+        SupabaseClientFactory factory,
+        SupabaseAdminClientFactory adminFactory)
     {
         _client = factory.CreateClient();
+        _adminClient = adminFactory.CreateClient();
     }
 
     public async Task<Response<List<NotificationDTO>>> GetRecent()
@@ -121,28 +129,81 @@ public class NotificationService : INotificationService
     private async Task FetchLowStockNotifications(
         List<NotificationDTO> notifications)
     {
-        var lowStock = await _client
+        var lowStock = await _adminClient
             .From<ProductSizeStock>()
             .Filter("quantity",
                 Supabase.Postgrest.Constants.Operator.LessThan,
-                "5")
+                LowStockThreshold.ToString())
             .Filter("quantity",
                 Supabase.Postgrest.Constants.Operator.GreaterThan,
                 "0")
-            .Limit(5)
+            .Order("quantity",
+                Supabase.Postgrest.Constants.Ordering.Ascending)
+            .Limit(LowStockFetchLimit)
             .Get();
+
+        if (lowStock.Models.Count == 0)
+            return;
+
+        var productIds = lowStock.Models
+            .Select(s => s.ProductId)
+            .Where(id => id != Guid.Empty)
+            .Distinct()
+            .ToList();
+
+        var productNames = await FetchProductNamesAsync(productIds);
 
         foreach (var stock in lowStock.Models)
         {
+            if (!productNames.TryGetValue(stock.ProductId, out var productName))
+                continue;
+
+            var sizeLabel = stock.Size.Trim();
+
             notifications.Add(new NotificationDTO
             {
                 Id = stock.Id,
                 Type = "low_stock",
-                Message = $"Low stock alert: Size {stock.Size} " +
-                            $"(only {stock.Quantity} left)",
-                CreatedAt = DateTime.UtcNow
+                Message = BuildLowStockMessage(
+                    productName, sizeLabel, stock.Quantity),
+                ProductId = stock.ProductId,
+                SizeLabel = sizeLabel,
+                SizeStockId = stock.Id,
+                Link = $"/admin/products?view=low-stock&productId={stock.ProductId}",
+                CreatedAt = stock.CreatedAt ?? DateTime.UtcNow
             });
         }
+    }
+
+    private async Task<Dictionary<Guid, string>> FetchProductNamesAsync(
+        IReadOnlyList<Guid> productIds)
+    {
+        if (productIds.Count == 0)
+            return new Dictionary<Guid, string>();
+
+        var idFilters = productIds
+            .Select(id => (object)id.ToString())
+            .ToList();
+
+        var products = await _adminClient
+            .From<Product>()
+            .Filter("id",
+                Supabase.Postgrest.Constants.Operator.In,
+                idFilters)
+            .Filter("is_deleted",
+                Supabase.Postgrest.Constants.Operator.Equals,
+                "false")
+            .Get();
+
+        return products.Models.ToDictionary(
+            p => p.Id,
+            p => string.IsNullOrWhiteSpace(p.Name) ? "Product" : p.Name.Trim());
+    }
+
+    private static string BuildLowStockMessage(
+        string productName, string sizeLabel, int quantity)
+    {
+        return $"Low stock alert: {productName} (Size {sizeLabel}) — {quantity} left";
     }
 
     public async Task<Response<List<NotificationDTO>>> GetRecent(
