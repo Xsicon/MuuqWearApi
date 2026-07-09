@@ -512,16 +512,7 @@ public class ContentService : IContentService
                         .Set(x => x.PublishedAt!, DateTime.UtcNow)
                         .Update()).Models.FirstOrDefault();
                     if (dh != null)
-                        published = new ContentItemDTO
-                        {
-                            Id = dh.Id,
-                            Title = dh.Title,
-                            Content = dh.Content,
-                            Status = dh.Status,
-                            Views = dh.Views,
-                            CreatedAt = dh.CreatedAt,
-                            PublishedAt = dh.PublishedAt
-                        };
+                        published = MapDesignHistoryToDto(dh);
                     break;
             }
 
@@ -597,16 +588,7 @@ public class ContentService : IContentService
                         .Set(x => x.PublishedAt!, (DateTime?)null)
                         .Update()).Models.FirstOrDefault();
                     if (dh != null)
-                        unpublished = new ContentItemDTO
-                        {
-                            Id = dh.Id,
-                            Title = dh.Title,
-                            Content = dh.Content,
-                            Status = dh.Status,
-                            Views = dh.Views,
-                            CreatedAt = dh.CreatedAt,
-                            PublishedAt = dh.PublishedAt
-                        };
+                        unpublished = MapDesignHistoryToDto(dh);
                     break;
             }
 
@@ -760,27 +742,7 @@ public class ContentService : IContentService
                 .Order("published_at", Supabase.Postgrest.Constants.Ordering.Descending)
                 .Get();
 
-            var items = result.Models.Select(x => new ContentItemDTO
-            {
-                Id = x.Id,
-                Title = x.Title,
-                Content = x.Content,
-                Status = x.Status,
-                Views = x.Views,
-                CreatedAt = x.CreatedAt,
-                PublishedAt = x.PublishedAt,
-                Designer = x.Designer,
-                Year = x.Year,
-                Inspiration = x.Inspiration,
-                Collection = x.Collection,
-                SecondImageUrl = x.SecondImageUrl,
-                TechnicalFabric = x.TechnicalFabric,
-                TechnicalTechniques = x.TechnicalTechniques,
-                TechnicalProduction = x.TechnicalProduction,
-                TechnicalAvailability = x.TechnicalAvailability,
-                ImageUrl = x.ImageUrl,
-                ProductId = x.ProductId
-            }).ToList();
+            var items = result.Models.Select(MapDesignHistoryToDto).ToList();
 
             return Response<List<ContentItemDTO>>.SuccessResponse(
                 items, "Design history fetched");
@@ -818,5 +780,27 @@ public class ContentService : IContentService
             return Response<int>.Fail("Error: " + ex.Message);
         }
     }
+
+    private static ContentItemDTO MapDesignHistoryToDto(DesignHistory item) => new()
+    {
+        Id = item.Id,
+        Title = item.Title,
+        Content = item.Content,
+        Status = item.Status,
+        Views = item.Views,
+        CreatedAt = item.CreatedAt,
+        PublishedAt = item.PublishedAt,
+        Designer = item.Designer,
+        Year = item.Year,
+        Inspiration = item.Inspiration,
+        Collection = item.Collection,
+        SecondImageUrl = item.SecondImageUrl,
+        TechnicalFabric = item.TechnicalFabric,
+        TechnicalTechniques = item.TechnicalTechniques,
+        TechnicalProduction = item.TechnicalProduction,
+        TechnicalAvailability = item.TechnicalAvailability,
+        ImageUrl = item.ImageUrl,
+        ProductId = item.ProductId
+    };
 
 }
