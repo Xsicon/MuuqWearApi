@@ -10,4 +10,9 @@ public class CustomerDTO
     public long? OrderCount { get; set; }
     public decimal TotalSpent { get; set; }
     public DateTime? LastOrderAt { get; set; }
+    public int NoteCount { get; set; }
+    public string? LatestNotePreview { get; set; }
+    public DateTime? LatestNoteAt { get; set; }
+    public string? LatestNoteAuthorName { get; set; }
+    public string? LatestNoteAuthorRole { get; set; }
 }
