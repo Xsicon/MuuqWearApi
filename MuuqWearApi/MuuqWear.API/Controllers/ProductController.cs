@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using MuuqWear.API.DTO.ProductDTO;
 using MuuqWear.API.Interfaces;
@@ -217,6 +218,29 @@ public class ProductController : BaseController
     {
         var result = await _productService.DeleteSizeStock(sizeStockId);
         if (!result.Success) return BadRequest(result);
+        return Ok(result);
+    }
+
+    [HttpPatch("{productId:guid}/size-stock/batch")]
+    [Authorize(Roles = "admin")]
+    public async Task<ActionResult<Response<BatchUpdateSizeStockResult>>> BatchUpdateSizeStock(
+        Guid productId,
+        [FromBody] BatchUpdateSizeStockRequest request)
+    {
+        if (productId == Guid.Empty)
+            return BadRequest(Response<BatchUpdateSizeStockResult>.Fail("Invalid product id"));
+
+        var result = await _productService.BatchUpdateSizeStock(productId, request);
+
+        if (!result.Success)
+        {
+            if (result.Message.Equals("Product not found", StringComparison.OrdinalIgnoreCase)
+                || result.Message.StartsWith("Size stock row not found", StringComparison.OrdinalIgnoreCase))
+                return NotFound(result);
+
+            return BadRequest(result);
+        }
+
         return Ok(result);
     }
 }

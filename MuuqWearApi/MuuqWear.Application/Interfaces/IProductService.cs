@@ -20,6 +20,9 @@ public interface IProductService
     Task<Response<SizeStockDTO>> UpdateSizeStock(Guid sizeStockId, int quantity);
     Task<Response<SizeStockDTO>> AddSizeStock(Guid productId, string size, int quantity);
     Task<Response<bool>> DeleteSizeStock(Guid sizeStockId);
+    Task<Response<BatchUpdateSizeStockResult>> BatchUpdateSizeStock(
+        Guid productId,
+        BatchUpdateSizeStockRequest request);
 
 
 }

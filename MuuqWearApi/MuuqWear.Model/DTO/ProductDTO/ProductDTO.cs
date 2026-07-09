@@ -67,4 +67,28 @@ public class AddSizeStockDTO
     public int Quantity { get; set; }
 }
 
+public class BatchUpdateSizeStockRequest
+{
+    public List<BatchSizeStockUpdateItem> Items { get; set; } = new();
+    public List<BatchSizeStockUpsertItem> Upserts { get; set; } = new();
+}
+
+public class BatchSizeStockUpdateItem
+{
+    public Guid SizeStockId { get; set; }
+    public int Quantity { get; set; }
+}
+
+public class BatchSizeStockUpsertItem
+{
+    public string Size { get; set; } = string.Empty;
+    public int Quantity { get; set; }
+}
+
+public class BatchUpdateSizeStockResult
+{
+    public List<SizeStockDTO> SizeStock { get; set; } = new();
+    public int TotalStock { get; set; }
+}
+
 

@@ -933,4 +933,268 @@ public class ProductService : IProductService
             return Response<bool>.Fail("Error: " + ex.Message);
         }
     }
+
+    public async Task<Response<BatchUpdateSizeStockResult>> BatchUpdateSizeStock(
+        Guid productId,
+        BatchUpdateSizeStockRequest request)
+    {
+        var items = request?.Items ?? new List<BatchSizeStockUpdateItem>();
+        var upserts = request?.Upserts ?? new List<BatchSizeStockUpsertItem>();
+
+        if (items.Count == 0 && upserts.Count == 0)
+        {
+            return Response<BatchUpdateSizeStockResult>.Fail(
+                "At least one size update is required");
+        }
+
+        var duplicateStockIds = items
+            .GroupBy(i => i.SizeStockId)
+            .Where(g => g.Key != Guid.Empty && g.Count() > 1)
+            .Select(g => g.Key)
+            .ToList();
+
+        if (duplicateStockIds.Count > 0)
+        {
+            return Response<BatchUpdateSizeStockResult>.Fail(
+                "Duplicate sizeStockId in batch");
+        }
+
+        var duplicateUpsertSizes = upserts
+            .Select(u => u.Size?.Trim())
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .GroupBy(s => s!, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToList();
+
+        if (duplicateUpsertSizes.Count > 0)
+        {
+            return Response<BatchUpdateSizeStockResult>.Fail(
+                "Duplicate size in batch upserts");
+        }
+
+        foreach (var item in items)
+        {
+            if (item.SizeStockId == Guid.Empty)
+            {
+                return Response<BatchUpdateSizeStockResult>.Fail(
+                    "Invalid sizeStockId in batch");
+            }
+
+            if (item.Quantity < 0)
+            {
+                return Response<BatchUpdateSizeStockResult>.Fail(
+                    "Quantity cannot be negative");
+            }
+        }
+
+        foreach (var upsert in upserts)
+        {
+            if (string.IsNullOrWhiteSpace(upsert.Size))
+            {
+                return Response<BatchUpdateSizeStockResult>.Fail(
+                    "Size is required for upserts");
+            }
+
+            if (upsert.Quantity < 0)
+            {
+                return Response<BatchUpdateSizeStockResult>.Fail(
+                    "Quantity cannot be negative");
+            }
+        }
+
+        try
+        {
+            if (!await ProductExistsAsync(productId))
+            {
+                return Response<BatchUpdateSizeStockResult>.Fail("Product not found");
+            }
+
+            var existingRows = await FetchSizeStockRows(productId);
+            var stockById = existingRows.ToDictionary(r => r.Id);
+            var sizesByName = existingRows.ToDictionary(
+                r => r.Size.Trim(),
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (var item in items)
+            {
+                if (!stockById.TryGetValue(item.SizeStockId, out var row))
+                {
+                    return Response<BatchUpdateSizeStockResult>.Fail(
+                        $"Size stock row not found: {item.SizeStockId}");
+                }
+
+                if (row.ProductId != productId)
+                {
+                    return Response<BatchUpdateSizeStockResult>.Fail(
+                        "Size stock row does not belong to this product");
+                }
+            }
+
+            foreach (var upsert in upserts)
+            {
+                var size = upsert.Size.Trim();
+                if (sizesByName.ContainsKey(size))
+                {
+                    return Response<BatchUpdateSizeStockResult>.Fail(
+                        $"Size '{size}' already exists; use sizeStockId to update");
+                }
+            }
+
+            var rollbackUpdates = new List<(Guid Id, int OldQuantity)>();
+            var insertedIds = new List<Guid>();
+
+            try
+            {
+                foreach (var item in items)
+                {
+                    var oldQuantity = stockById[item.SizeStockId].Quantity;
+                    rollbackUpdates.Add((item.SizeStockId, oldQuantity));
+
+                    var updateResult = await _adminClient
+                        .From<ProductSizeStock>()
+                        .Filter("id",
+                            Supabase.Postgrest.Constants.Operator.Equals,
+                            item.SizeStockId.ToString())
+                        .Set(x => x.Quantity, item.Quantity)
+                        .Update();
+
+                    if (!updateResult.Models.Any())
+                    {
+                        throw new InvalidOperationException(
+                            $"Size stock row not found: {item.SizeStockId}");
+                    }
+                }
+
+                foreach (var upsert in upserts)
+                {
+                    var newId = Guid.NewGuid();
+                    insertedIds.Add(newId);
+
+                    var insertResult = await _adminClient
+                        .From<ProductSizeStock>()
+                        .Insert(new ProductSizeStock
+                        {
+                            Id = newId,
+                            ProductId = productId,
+                            Size = upsert.Size.Trim(),
+                            Quantity = upsert.Quantity
+                        });
+
+                    if (!insertResult.Models.Any())
+                        throw new InvalidOperationException("Failed to add size stock");
+                }
+            }
+            catch (Exception ex)
+            {
+                await RollbackSizeStockChangesAsync(rollbackUpdates, insertedIds);
+                return Response<BatchUpdateSizeStockResult>.Fail(ex.Message);
+            }
+
+            InvalidateHomeProductsCache();
+
+            var freshStock = await FetchSizeStockRows(productId);
+            var sizeStock = freshStock
+                .OrderBy(s => s.Size)
+                .Select(MapSizeStockToDto)
+                .ToList();
+
+            return Response<BatchUpdateSizeStockResult>.SuccessResponse(
+                new BatchUpdateSizeStockResult
+                {
+                    SizeStock = sizeStock,
+                    TotalStock = sizeStock.Sum(s => s.Quantity)
+                },
+                "Size stock updated");
+        }
+        catch (Exception ex)
+        {
+            return Response<BatchUpdateSizeStockResult>.Fail("Error: " + ex.Message);
+        }
+    }
+
+    private async Task<bool> ProductExistsAsync(Guid productId)
+    {
+        try
+        {
+            await _adminClient
+                .From<Product>()
+                .Filter("id",
+                    Supabase.Postgrest.Constants.Operator.Equals,
+                    productId.ToString())
+                .Filter("is_deleted",
+                    Supabase.Postgrest.Constants.Operator.Equals,
+                    "false")
+                .Single();
+
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private async Task<List<ProductSizeStock>> FetchSizeStockRows(Guid productId)
+    {
+        var result = await _adminClient
+            .From<ProductSizeStock>()
+            .Filter("product_id",
+                Supabase.Postgrest.Constants.Operator.Equals,
+                productId.ToString())
+            .Order("size", Supabase.Postgrest.Constants.Ordering.Ascending)
+            .Get();
+
+        return result.Models;
+    }
+
+    private static SizeStockDTO MapSizeStockToDto(ProductSizeStock row)
+    {
+        return new SizeStockDTO
+        {
+            Id = row.Id,
+            Size = row.Size,
+            Quantity = row.Quantity
+        };
+    }
+
+    private async Task RollbackSizeStockChangesAsync(
+        IReadOnlyList<(Guid Id, int OldQuantity)> rollbackUpdates,
+        IReadOnlyList<Guid> insertedIds)
+    {
+        foreach (var (id, oldQuantity) in rollbackUpdates)
+        {
+            try
+            {
+                await _adminClient
+                    .From<ProductSizeStock>()
+                    .Filter("id",
+                        Supabase.Postgrest.Constants.Operator.Equals,
+                        id.ToString())
+                    .Set(x => x.Quantity, oldQuantity)
+                    .Update();
+            }
+            catch
+            {
+                // Best-effort rollback
+            }
+        }
+
+        foreach (var id in insertedIds)
+        {
+            try
+            {
+                await _adminClient
+                    .From<ProductSizeStock>()
+                    .Filter("id",
+                        Supabase.Postgrest.Constants.Operator.Equals,
+                        id.ToString())
+                    .Delete();
+            }
+            catch
+            {
+                // Best-effort rollback
+            }
+        }
+    }
 }
