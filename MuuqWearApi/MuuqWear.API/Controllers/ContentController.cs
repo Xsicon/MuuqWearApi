@@ -112,5 +112,19 @@ public class ContentController : BaseController
         var result = await _contentService.GetPublishedDesignHistory();
         return HandleResponse(result);
     }
+
+    [HttpPost("design-history/{id:guid}/view")]
+    [AllowAnonymous]
+    public async Task<ActionResult<Response<int>>> RecordDesignHistoryView(Guid id)
+    {
+        var result = await _contentService.RecordDesignHistoryView(id);
+        if (!result.Success)
+        {
+            var isMissing = result.Message?.Contains("not found", StringComparison.OrdinalIgnoreCase) == true;
+            return isMissing ? NotFound(result) : BadRequest(result);
+        }
+
+        return Ok(result);
+    }
 }
 

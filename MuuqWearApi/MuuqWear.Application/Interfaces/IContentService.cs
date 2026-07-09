@@ -31,4 +31,5 @@ public interface IContentService
     Task<Response<PaginatedResponse<ContentItemDTO>>> GetPublished(
     int page, int pageSize, string? category = null);
     Task<Response<List<ContentItemDTO>>> GetPublishedDesignHistory();
+    Task<Response<int>> RecordDesignHistoryView(Guid id);
 }

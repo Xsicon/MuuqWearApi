@@ -54,4 +54,7 @@ public class DesignHistory : BaseModel
     public string? TechnicalAvailability { get; set; }
     [Column("image_url")]
     public string? ImageUrl { get; set; }
+
+    [Column("product_id")]
+    public Guid? ProductId { get; set; }
 }

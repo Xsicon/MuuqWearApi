@@ -20,6 +20,7 @@ public class ContentItemDTO
     public string? TechnicalTechniques { get; set; }
     public string? TechnicalProduction { get; set; }
     public string? TechnicalAvailability { get; set; }
+    public Guid? ProductId { get; set; }
 }
 
 public class CreateContentItemDTO
@@ -37,6 +38,7 @@ public class CreateContentItemDTO
     public string? TechnicalTechniques { get; set; }
     public string? TechnicalProduction { get; set; }
     public string? TechnicalAvailability { get; set; }
+    public Guid? ProductId { get; set; }
 
 }
 
@@ -55,6 +57,7 @@ public class UpdateContentItemDTO
     public string? TechnicalTechniques { get; set; }
     public string? TechnicalProduction { get; set; }
     public string? TechnicalAvailability { get; set; }
+    public Guid? ProductId { get; set; }
 }
 
 

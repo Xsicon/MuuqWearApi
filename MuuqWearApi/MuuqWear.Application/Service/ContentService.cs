@@ -81,7 +81,8 @@ public class ContentService : IContentService
                             TechnicalTechniques = x.TechnicalTechniques,
                             TechnicalProduction = x.TechnicalProduction,
                             TechnicalAvailability = x.TechnicalAvailability,
-                            ImageUrl = x.ImageUrl
+                            ImageUrl = x.ImageUrl,
+                            ProductId = x.ProductId
 
 
                         }).ToList(),
@@ -151,7 +152,18 @@ public class ContentService : IContentService
                         Status = d.Status,
                         Views = d.Views,
                         CreatedAt = d.CreatedAt,
-                        PublishedAt = d.PublishedAt
+                        PublishedAt = d.PublishedAt,
+                        Designer = d.Designer,
+                        Year = d.Year,
+                        Inspiration = d.Inspiration,
+                        Collection = d.Collection,
+                        SecondImageUrl = d.SecondImageUrl,
+                        TechnicalFabric = d.TechnicalFabric,
+                        TechnicalTechniques = d.TechnicalTechniques,
+                        TechnicalProduction = d.TechnicalProduction,
+                        TechnicalAvailability = d.TechnicalAvailability,
+                        ImageUrl = d.ImageUrl,
+                        ProductId = d.ProductId
                     } : null,
 
                 _ => null
@@ -249,7 +261,8 @@ public class ContentService : IContentService
                             TechnicalTechniques = request.TechnicalTechniques,
                             TechnicalProduction = request.TechnicalProduction,
                             TechnicalAvailability = request.TechnicalAvailability,
-                            ImageUrl = request.ImageUrl
+                            ImageUrl = request.ImageUrl,
+                            ProductId = request.ProductId
 
                         })).Models.FirstOrDefault();
                     if (dh != null)
@@ -271,7 +284,8 @@ public class ContentService : IContentService
                             TechnicalTechniques = dh.TechnicalTechniques,
                             TechnicalProduction = dh.TechnicalProduction,
                             TechnicalAvailability = dh.TechnicalAvailability,
-                            ImageUrl = dh.ImageUrl
+                            ImageUrl = dh.ImageUrl,
+                            ProductId = dh.ProductId
 
                         };
                     break;
@@ -360,6 +374,7 @@ public class ContentService : IContentService
                         .Set(x => x.TechnicalTechniques!, request.TechnicalTechniques)
                         .Set(x => x.TechnicalProduction!, request.TechnicalProduction)
                         .Set(x => x.TechnicalAvailability!, request.TechnicalAvailability)
+                        .Set(x => x.ProductId!, request.ProductId)
                         .Update()).Models.FirstOrDefault();
                     if (dh != null)
                         updated = new ContentItemDTO
@@ -380,7 +395,8 @@ public class ContentService : IContentService
                             TechnicalTechniques = dh.TechnicalTechniques,
                             TechnicalProduction = dh.TechnicalProduction,
                             TechnicalAvailability = dh.TechnicalAvailability,
-                            ImageUrl = dh.ImageUrl
+                            ImageUrl = dh.ImageUrl,
+                            ProductId = dh.ProductId
                         };
                     break;
             }
@@ -762,7 +778,8 @@ public class ContentService : IContentService
                 TechnicalTechniques = x.TechnicalTechniques,
                 TechnicalProduction = x.TechnicalProduction,
                 TechnicalAvailability = x.TechnicalAvailability,
-                ImageUrl = x.ImageUrl
+                ImageUrl = x.ImageUrl,
+                ProductId = x.ProductId
             }).ToList();
 
             return Response<List<ContentItemDTO>>.SuccessResponse(
@@ -771,6 +788,34 @@ public class ContentService : IContentService
         catch (Exception ex)
         {
             return Response<List<ContentItemDTO>>.Fail("Error: " + ex.Message);
+        }
+    }
+
+    public async Task<Response<int>> RecordDesignHistoryView(Guid id)
+    {
+        try
+        {
+            var existing = await _client.From<DesignHistory>()
+                .Filter("id", Supabase.Postgrest.Constants.Operator.Equals, id.ToString())
+                .Filter("status", Supabase.Postgrest.Constants.Operator.Equals, "published")
+                .Single();
+
+            if (existing == null)
+                return Response<int>.Fail("Design history item not found");
+
+            var updated = (await _client.From<DesignHistory>()
+                .Filter("id", Supabase.Postgrest.Constants.Operator.Equals, id.ToString())
+                .Set(x => x.Views, existing.Views + 1)
+                .Update()).Models.FirstOrDefault();
+
+            if (updated == null)
+                return Response<int>.Fail("Failed to record view");
+
+            return Response<int>.SuccessResponse(updated.Views, "View recorded");
+        }
+        catch (Exception ex)
+        {
+            return Response<int>.Fail("Error: " + ex.Message);
         }
     }
 
