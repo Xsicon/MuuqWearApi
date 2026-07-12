@@ -9,4 +9,7 @@ public class PaginatedResponse<T>
     public bool HasMore { get; set; }
     public bool HasPreviousPage { get; set; }
     public bool HasNextPage { get; set; }
+
+    /// <summary>Optional hero item (e.g. featured journal article).</summary>
+    public T? FeaturedArticle { get; set; }
 }

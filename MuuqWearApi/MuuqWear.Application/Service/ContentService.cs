@@ -1,4 +1,7 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Http;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
 using MuuqWear.Application.Shared;
@@ -11,6 +14,20 @@ namespace MuuqWear.API.Service;
 
 public class ContentService : IContentService
 {
+    private static readonly HashSet<string> AllowedJournalCategories = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Culture", "Design", "Innovation", "Lifestyle", "Tech"
+    };
+
+    private static readonly HashSet<string> AllowedStatuses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "draft", "published", "scheduled", "archived"
+    };
+
+    private const int MaxTags = 20;
+    private const int MaxTagLength = 50;
+    private const int WordsPerMinute = 200;
+
     private readonly Supabase.Client _client;
 
     public ContentService(SupabaseAdminClientFactory factory)
@@ -18,31 +35,20 @@ public class ContentService : IContentService
         _client = factory.CreateClient();
     }
 
-    // =============================================
-    // GET ALL
-    // =============================================
     public async Task<Response<List<ContentItemDTO>>> GetAll(ContentCategory type)
     {
         try
         {
+            if (type == ContentCategory.JournalArticles)
+                await PromoteDueScheduledArticlesAsync();
+
             var items = type switch
             {
                 ContentCategory.JournalArticles =>
                     (await _client.From<JournalArticle>()
                         .Order("created_at",
                             Supabase.Postgrest.Constants.Ordering.Descending)
-                        .Get()).Models.Select(x => new ContentItemDTO
-                        {
-                            Id = x.Id,
-                            Title = x.Title,
-                            Content = x.Content,
-                            Status = x.Status,
-                            Views = x.Views,
-                            CreatedAt = x.CreatedAt,
-                            PublishedAt = x.PublishedAt,
-                            Category = x.Category,
-                            ImageUrl = x.ImageUrl
-                        }).ToList(),
+                        .Get()).Models.Select(MapJournalArticleToDto).ToList(),
 
                 ContentCategory.Events =>
                     (await _client.From<Event>()
@@ -63,29 +69,7 @@ public class ContentService : IContentService
                     (await _client.From<DesignHistory>()
                         .Order("created_at",
                             Supabase.Postgrest.Constants.Ordering.Descending)
-                        .Get()).Models.Select(x => new ContentItemDTO
-                        {
-                            Id = x.Id,
-                            Title = x.Title,
-                            Content = x.Content,
-                            Status = x.Status,
-                            Views = x.Views,
-                            CreatedAt = x.CreatedAt,
-                            PublishedAt = x.PublishedAt,
-                            Designer = x.Designer,
-                            Year = x.Year,
-                            Inspiration = x.Inspiration,
-                            Collection = x.Collection,
-                            SecondImageUrl = x.SecondImageUrl,
-                            TechnicalFabric = x.TechnicalFabric,
-                            TechnicalTechniques = x.TechnicalTechniques,
-                            TechnicalProduction = x.TechnicalProduction,
-                            TechnicalAvailability = x.TechnicalAvailability,
-                            ImageUrl = x.ImageUrl,
-                            ProductId = x.ProductId
-
-
-                        }).ToList(),
+                        .Get()).Models.Select(MapDesignHistoryToDto).ToList(),
 
                 _ => new List<ContentItemDTO>()
             };
@@ -99,31 +83,16 @@ public class ContentService : IContentService
         }
     }
 
-    // =============================================
-    // GET BY ID
-    // =============================================
     public async Task<Response<ContentItemDTO>> GetById(ContentCategory type, Guid id)
     {
         try
         {
+            if (type == ContentCategory.JournalArticles)
+                await PromoteDueScheduledArticlesAsync();
+
             ContentItemDTO? item = type switch
             {
-                ContentCategory.JournalArticles => await _client
-                    .From<JournalArticle>()
-                    .Filter("id", Supabase.Postgrest.Constants.Operator.Equals,
-                        id.ToString())
-                    .Single() is { } x ? new ContentItemDTO
-                    {
-                        Id = x.Id,
-                        Title = x.Title,
-                        Content = x.Content,
-                        Status = x.Status,
-                        Views = x.Views,
-                        CreatedAt = x.CreatedAt,
-                        PublishedAt = x.PublishedAt,
-                        Category = x.Category,
-                        ImageUrl = x.ImageUrl
-                    } : null,
+                ContentCategory.JournalArticles => await TryGetJournalDtoByIdAsync(id),
 
                 ContentCategory.Events => await _client
                     .From<Event>()
@@ -144,27 +113,7 @@ public class ContentService : IContentService
                     .From<DesignHistory>()
                     .Filter("id", Supabase.Postgrest.Constants.Operator.Equals,
                         id.ToString())
-                    .Single() is { } d ? new ContentItemDTO
-                    {
-                        Id = d.Id,
-                        Title = d.Title,
-                        Content = d.Content,
-                        Status = d.Status,
-                        Views = d.Views,
-                        CreatedAt = d.CreatedAt,
-                        PublishedAt = d.PublishedAt,
-                        Designer = d.Designer,
-                        Year = d.Year,
-                        Inspiration = d.Inspiration,
-                        Collection = d.Collection,
-                        SecondImageUrl = d.SecondImageUrl,
-                        TechnicalFabric = d.TechnicalFabric,
-                        TechnicalTechniques = d.TechnicalTechniques,
-                        TechnicalProduction = d.TechnicalProduction,
-                        TechnicalAvailability = d.TechnicalAvailability,
-                        ImageUrl = d.ImageUrl,
-                        ProductId = d.ProductId
-                    } : null,
+                    .Single() is { } d ? MapDesignHistoryToDto(d) : null,
 
                 _ => null
             };
@@ -176,13 +125,13 @@ public class ContentService : IContentService
         }
         catch (Exception ex)
         {
+            if (LooksLikeNotFound(ex.Message))
+                return Response<ContentItemDTO>.Fail("Item not found");
+
             return Response<ContentItemDTO>.Fail("Error: " + ex.Message);
         }
     }
 
-    // =============================================
-    // CREATE
-    // =============================================
     public async Task<Response<ContentItemDTO>> Create(
         ContentCategory type, CreateContentItemDTO request)
     {
@@ -193,32 +142,66 @@ public class ContentService : IContentService
             switch (type)
             {
                 case ContentCategory.JournalArticles:
+                {
+                    var validationError = ValidateJournalRequest(
+                        request.Title,
+                        request.Category,
+                        request.Status,
+                        request.ScheduledAt,
+                        request.IsFeatured,
+                        request.Tags,
+                        requireStatusInAllowedSet: false);
+                    if (validationError != null)
+                        return Response<ContentItemDTO>.Fail(validationError);
+
+                    var status = NormalizeStatus(request.Status) ?? "draft";
+                    var tags = NormalizeTags(request.Tags);
+                    var slug = await ResolveUniqueSlugAsync(
+                        request.Slug, request.Title, excludeId: null);
+                    if (slug.StartsWith("ERROR:", StringComparison.Ordinal))
+                        return Response<ContentItemDTO>.Fail(slug["ERROR:".Length..].Trim());
+
+                    if (request.IsFeatured == true && status != "published")
+                        return Response<ContentItemDTO>.Fail(
+                            "Only published articles may be featured");
+
+                    if (request.IsFeatured == true)
+                        await ClearFeaturedArticlesAsync(exceptId: null);
+
+                    var readTime = ResolveReadTimeMinutes(
+                        request.ReadTimeMinutes, request.Content);
+
+                    DateTime? publishedAt = status == "published"
+                        ? DateTime.UtcNow
+                        : null;
+
                     var ja = (await _client.From<JournalArticle>()
                         .Insert(new JournalArticle
                         {
                             Id = Guid.NewGuid(),
-                            Title = request.Title,
+                            Title = request.Title.Trim(),
                             Content = request.Content,
-                            Status = "draft",
+                            Status = status,
                             CreatedAt = DateTime.UtcNow,
-                            Category = request.Category,
-                            ImageUrl = request.ImageUrl
+                            PublishedAt = publishedAt,
+                            Category = NormalizeCategory(request.Category),
+                            ImageUrl = request.ImageUrl,
+                            Author = NullIfWhiteSpace(request.Author),
+                            Excerpt = NullIfWhiteSpace(request.Excerpt),
+                            Slug = slug,
+                            SeoTitle = NullIfWhiteSpace(request.SeoTitle),
+                            Tags = tags,
+                            IsFeatured = request.IsFeatured == true,
+                            ScheduledAt = status == "scheduled"
+                                ? request.ScheduledAt
+                                : null,
+                            ReadTimeMinutes = readTime
                         })).Models.FirstOrDefault();
-                    if (ja != null)
-                        created = new ContentItemDTO
-                        {
-                            Id = ja.Id,
-                            Title = ja.Title,
-                            Content = ja.Content,
-                            Status = ja.Status,
-                            Views = ja.Views,
-                            CreatedAt = ja.CreatedAt,
-                            PublishedAt = ja.PublishedAt,
-                            Category = ja.Category,
-                            ImageUrl = ja.ImageUrl
 
-                        };
+                    if (ja != null)
+                        created = MapJournalArticleToDto(ja);
                     break;
+                }
 
                 case ContentCategory.Events:
                     var ev = (await _client.From<Event>()
@@ -263,31 +246,9 @@ public class ContentService : IContentService
                             TechnicalAvailability = request.TechnicalAvailability,
                             ImageUrl = request.ImageUrl,
                             ProductId = request.ProductId
-
                         })).Models.FirstOrDefault();
                     if (dh != null)
-                        created = new ContentItemDTO
-                        {
-                            Id = dh.Id,
-                            Title = dh.Title,
-                            Content = dh.Content,
-                            Status = dh.Status,
-                            Views = dh.Views,
-                            CreatedAt = dh.CreatedAt,
-                            PublishedAt = dh.PublishedAt,
-                            Designer = dh.Designer,
-                            Year = dh.Year,
-                            Inspiration = dh.Inspiration,
-                            Collection = dh.Collection,
-                            SecondImageUrl = dh.SecondImageUrl,
-                            TechnicalFabric = dh.TechnicalFabric,
-                            TechnicalTechniques = dh.TechnicalTechniques,
-                            TechnicalProduction = dh.TechnicalProduction,
-                            TechnicalAvailability = dh.TechnicalAvailability,
-                            ImageUrl = dh.ImageUrl,
-                            ProductId = dh.ProductId
-
-                        };
+                        created = MapDesignHistoryToDto(dh);
                     break;
             }
 
@@ -302,9 +263,6 @@ public class ContentService : IContentService
         }
     }
 
-    // =============================================
-    // UPDATE
-    // =============================================
     public async Task<Response<ContentItemDTO>> Update(
         ContentCategory type, Guid id, UpdateContentItemDTO request)
     {
@@ -315,28 +273,90 @@ public class ContentService : IContentService
             switch (type)
             {
                 case ContentCategory.JournalArticles:
+                {
+                    JournalArticle? existing;
+                    try
+                    {
+                        existing = await _client.From<JournalArticle>()
+                            .Filter("id", Supabase.Postgrest.Constants.Operator.Equals,
+                                id.ToString())
+                            .Single();
+                    }
+                    catch
+                    {
+                        return Response<ContentItemDTO>.Fail("Item not found");
+                    }
+
+                    if (existing == null)
+                        return Response<ContentItemDTO>.Fail("Item not found");
+
+                    var status = NormalizeStatus(request.Status) ?? existing.Status;
+                    var effectiveScheduledAt = status == "scheduled"
+                        ? (request.ScheduledAt ?? existing.ScheduledAt)
+                        : null;
+
+                    var validationError = ValidateJournalRequest(
+                        request.Title,
+                        request.Category,
+                        status,
+                        effectiveScheduledAt,
+                        request.IsFeatured ?? existing.IsFeatured,
+                        request.Tags,
+                        requireStatusInAllowedSet: true);
+                    if (validationError != null)
+                        return Response<ContentItemDTO>.Fail(validationError);
+
+                    var tags = request.Tags != null
+                        ? NormalizeTags(request.Tags)
+                        : existing.Tags ?? new List<string>();
+
+                    var slugSource = !string.IsNullOrWhiteSpace(request.Slug)
+                        ? request.Slug
+                        : existing.Slug;
+                    var slug = await ResolveUniqueSlugAsync(
+                        slugSource, request.Title, excludeId: id);
+                    if (slug.StartsWith("ERROR:", StringComparison.Ordinal))
+                        return Response<ContentItemDTO>.Fail(slug["ERROR:".Length..].Trim());
+
+                    var isFeatured = request.IsFeatured ?? existing.IsFeatured;
+                    if (status != "published")
+                        isFeatured = false;
+
+                    if (isFeatured)
+                        await ClearFeaturedArticlesAsync(exceptId: id);
+
+                    var readTime = ResolveReadTimeMinutes(
+                        request.ReadTimeMinutes, request.Content);
+
+                    DateTime? publishedAt = existing.PublishedAt;
+                    if (status == "published" && existing.Status != "published")
+                        publishedAt = DateTime.UtcNow;
+                    else if (status != "published")
+                        publishedAt = status == "scheduled" ? null : existing.PublishedAt;
+
                     var ja = (await _client.From<JournalArticle>()
-         .Filter("id", Supabase.Postgrest.Constants.Operator.Equals,
-             id.ToString())
-         .Set(x => x.Title, request.Title)
-         .Set(x => x.Content!, request.Content)
-         .Set(x => x.Category!, request.Category)  // ← add
-         .Set(x => x.ImageUrl!, request.ImageUrl)  // ← add
-         .Update()).Models.FirstOrDefault();
+                        .Filter("id", Supabase.Postgrest.Constants.Operator.Equals,
+                            id.ToString())
+                        .Set(x => x.Title, request.Title.Trim())
+                        .Set(x => x.Content!, request.Content)
+                        .Set(x => x.Status, status)
+                        .Set(x => x.Category!, NormalizeCategory(request.Category))
+                        .Set(x => x.ImageUrl!, request.ImageUrl)
+                        .Set(x => x.Author!, NullIfWhiteSpace(request.Author))
+                        .Set(x => x.Excerpt!, NullIfWhiteSpace(request.Excerpt))
+                        .Set(x => x.Slug!, slug)
+                        .Set(x => x.SeoTitle!, NullIfWhiteSpace(request.SeoTitle))
+                        .Set(x => x.Tags!, tags)
+                        .Set(x => x.IsFeatured, isFeatured)
+                        .Set(x => x.ScheduledAt!, effectiveScheduledAt)
+                        .Set(x => x.ReadTimeMinutes!, readTime)
+                        .Set(x => x.PublishedAt!, publishedAt)
+                        .Update()).Models.FirstOrDefault();
+
                     if (ja != null)
-                        updated = new ContentItemDTO
-                        {
-                            Id = ja.Id,
-                            Title = ja.Title,
-                            Content = ja.Content,
-                            Status = ja.Status,
-                            Views = ja.Views,
-                            CreatedAt = ja.CreatedAt,
-                            PublishedAt = ja.PublishedAt,
-                            Category = ja.Category,
-                            ImageUrl = ja.ImageUrl
-                        };
+                        updated = MapJournalArticleToDto(ja);
                     break;
+                }
 
                 case ContentCategory.Events:
                     var ev = (await _client.From<Event>()
@@ -377,27 +397,7 @@ public class ContentService : IContentService
                         .Set(x => x.ProductId!, request.ProductId)
                         .Update()).Models.FirstOrDefault();
                     if (dh != null)
-                        updated = new ContentItemDTO
-                        {
-                            Id = dh.Id,
-                            Title = dh.Title,
-                            Content = dh.Content,
-                            Status = dh.Status,
-                            Views = dh.Views,
-                            CreatedAt = dh.CreatedAt,
-                            PublishedAt = dh.PublishedAt,
-                            Designer = dh.Designer,
-                            Year = dh.Year,
-                            Inspiration = dh.Inspiration,
-                            Collection = dh.Collection,
-                            SecondImageUrl = dh.SecondImageUrl,
-                            TechnicalFabric = dh.TechnicalFabric,
-                            TechnicalTechniques = dh.TechnicalTechniques,
-                            TechnicalProduction = dh.TechnicalProduction,
-                            TechnicalAvailability = dh.TechnicalAvailability,
-                            ImageUrl = dh.ImageUrl,
-                            ProductId = dh.ProductId
-                        };
+                        updated = MapDesignHistoryToDto(dh);
                     break;
             }
 
@@ -412,9 +412,6 @@ public class ContentService : IContentService
         }
     }
 
-    // =============================================
-    // DELETE
-    // =============================================
     public async Task<Response<bool>> Delete(ContentCategory type, Guid id)
     {
         try
@@ -451,9 +448,6 @@ public class ContentService : IContentService
         }
     }
 
-    // =============================================
-    // PUBLISH
-    // =============================================
     public async Task<Response<ContentItemDTO>> Publish(ContentCategory type, Guid id)
     {
         try
@@ -468,20 +462,10 @@ public class ContentService : IContentService
                             id.ToString())
                         .Set(x => x.Status, "published")
                         .Set(x => x.PublishedAt!, DateTime.UtcNow)
+                        .Set(x => x.ScheduledAt!, (DateTime?)null)
                         .Update()).Models.FirstOrDefault();
                     if (ja != null)
-                        published = new ContentItemDTO
-                        {
-                            Id = ja.Id,
-                            Title = ja.Title,
-                            Content = ja.Content,
-                            Status = ja.Status,
-                            Views = ja.Views,
-                            CreatedAt = ja.CreatedAt,
-                            PublishedAt = ja.PublishedAt,
-                            Category = ja.Category,   // ← add
-                            ImageUrl = ja.ImageUrl
-                        };
+                        published = MapJournalArticleToDto(ja);
                     break;
 
                 case ContentCategory.Events:
@@ -527,9 +511,6 @@ public class ContentService : IContentService
         }
     }
 
-    // =============================================
-    // UNPUBLISH
-    // =============================================
     public async Task<Response<ContentItemDTO>> Unpublish(ContentCategory type, Guid id)
     {
         try
@@ -544,20 +525,11 @@ public class ContentService : IContentService
                             id.ToString())
                         .Set(x => x.Status, "draft")
                         .Set(x => x.PublishedAt!, (DateTime?)null)
+                        .Set(x => x.IsFeatured, false)
+                        .Set(x => x.ScheduledAt!, (DateTime?)null)
                         .Update()).Models.FirstOrDefault();
                     if (ja != null)
-                        unpublished = new ContentItemDTO
-                        {
-                            Id = ja.Id,
-                            Title = ja.Title,
-                            Content = ja.Content,
-                            Status = ja.Status,
-                            Views = ja.Views,
-                            CreatedAt = ja.CreatedAt,
-                            PublishedAt = ja.PublishedAt,
-                            Category = ja.Category,   // ← add
-                            ImageUrl = ja.ImageUrl
-                        };
+                        unpublished = MapJournalArticleToDto(ja);
                     break;
 
                 case ContentCategory.Events:
@@ -610,7 +582,6 @@ public class ContentService : IContentService
         {
             var fileName =
                 $"articles/{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
-            //  stream directly — no full byte load
             using var stream = file.OpenReadStream();
             using var ms = new MemoryStream();
             await stream.CopyToAsync(ms);
@@ -636,21 +607,22 @@ public class ContentService : IContentService
         }
     }
 
-    // =============================================
-    // GET PUBLISHED (paginated + filtered)
-    // =============================================
     public async Task<Response<PaginatedResponse<ContentItemDTO>>> GetPublished(
         int page, int pageSize, string? category = null)
     {
         try
         {
+            await PromoteDueScheduledArticlesAsync();
+
             var offset = (page - 1) * pageSize;
 
-            // Count uses HEAD; run before page GET to avoid parallel PostgREST conflicts.
             var totalCount = await CountPublishedArticles(category);
             var items = await FetchPublishedPage(offset, pageSize, category);
+            var featured = await GetFeaturedPublishedArticleAsync();
 
-            var totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
+            var totalPages = totalCount == 0
+                ? 0
+                : (int)Math.Ceiling((double)totalCount / pageSize);
 
             var pagedResult = new PaginatedResponse<ContentItemDTO>
             {
@@ -658,7 +630,11 @@ public class ContentService : IContentService
                 TotalCount = totalCount,
                 Page = page,
                 PageSize = pageSize,
-                HasMore = page < totalPages
+                TotalPages = totalPages,
+                HasMore = page < totalPages,
+                HasPreviousPage = page > 1,
+                HasNextPage = page < totalPages,
+                FeaturedArticle = featured
             };
 
             return Response<PaginatedResponse<ContentItemDTO>>.SuccessResponse(
@@ -667,6 +643,88 @@ public class ContentService : IContentService
         catch (Exception ex)
         {
             return Response<PaginatedResponse<ContentItemDTO>>.Fail("Error: " + ex.Message);
+        }
+    }
+
+    public async Task<Response<ContentItemDTO>> GetFeaturedPublished()
+    {
+        try
+        {
+            await PromoteDueScheduledArticlesAsync();
+
+            var featured = await GetFeaturedPublishedArticleAsync();
+            if (featured == null)
+                return Response<ContentItemDTO>.Fail("No featured article found");
+
+            return Response<ContentItemDTO>.SuccessResponse(featured, "Featured article fetched");
+        }
+        catch (Exception ex)
+        {
+            return Response<ContentItemDTO>.Fail("Error: " + ex.Message);
+        }
+    }
+
+    public async Task<Response<ContentItemDTO>> GetPublishedBySlug(string slug)
+    {
+        try
+        {
+            await PromoteDueScheduledArticlesAsync();
+
+            if (string.IsNullOrWhiteSpace(slug))
+                return Response<ContentItemDTO>.Fail("Slug is required");
+
+            var result = await _client.From<JournalArticle>()
+                .Filter("slug", Supabase.Postgrest.Constants.Operator.Equals, slug.Trim())
+                .Filter("status", Supabase.Postgrest.Constants.Operator.Equals, "published")
+                .Limit(1)
+                .Get();
+
+            var article = result.Models.FirstOrDefault();
+            if (article == null)
+                return Response<ContentItemDTO>.Fail("Article not found");
+
+            return Response<ContentItemDTO>.SuccessResponse(
+                MapJournalArticleToDto(article), "Article fetched");
+        }
+        catch (Exception ex)
+        {
+            if (LooksLikeNotFound(ex.Message))
+                return Response<ContentItemDTO>.Fail("Article not found");
+
+            return Response<ContentItemDTO>.Fail("Error: " + ex.Message);
+        }
+    }
+
+    public async Task<Response<int>> RecordJournalView(Guid id)
+    {
+        try
+        {
+            var existingResult = await _client.From<JournalArticle>()
+                .Filter("id", Supabase.Postgrest.Constants.Operator.Equals, id.ToString())
+                .Filter("status", Supabase.Postgrest.Constants.Operator.Equals, "published")
+                .Limit(1)
+                .Get();
+
+            var existing = existingResult.Models.FirstOrDefault();
+            if (existing == null)
+                return Response<int>.Fail("Article not found");
+
+            var updated = (await _client.From<JournalArticle>()
+                .Filter("id", Supabase.Postgrest.Constants.Operator.Equals, id.ToString())
+                .Set(x => x.Views, existing.Views + 1)
+                .Update()).Models.FirstOrDefault();
+
+            if (updated == null)
+                return Response<int>.Fail("Failed to record view");
+
+            return Response<int>.SuccessResponse(updated.Views, "View recorded");
+        }
+        catch (Exception ex)
+        {
+            if (LooksLikeNotFound(ex.Message))
+                return Response<int>.Fail("Article not found");
+
+            return Response<int>.Fail("Error: " + ex.Message);
         }
     }
 
@@ -717,21 +775,30 @@ public class ContentService : IContentService
 
         return result.Models
             .Where(x => x.Status.Equals("published", StringComparison.OrdinalIgnoreCase))
-            .Select(x => new ContentItemDTO
-            {
-                Id = x.Id,
-                Title = x.Title,
-                Category = x.Category,
-                ImageUrl = x.ImageUrl,
-                Status = x.Status,
-                Views = x.Views,
-                CreatedAt = x.CreatedAt,
-                PublishedAt = x.PublishedAt
-            }).ToList();
+            .Select(MapJournalArticleListDto)
+            .ToList();
     }
-    // =============================================
-    // GET PUBLISHED DESIGN HISTORY (for public Archive page)
-    // =============================================
+
+    private async Task<ContentItemDTO?> GetFeaturedPublishedArticleAsync()
+    {
+        try
+        {
+            var featured = await _client.From<JournalArticle>()
+                .Filter("status", Supabase.Postgrest.Constants.Operator.Equals, "published")
+                .Filter("is_featured", Supabase.Postgrest.Constants.Operator.Equals, "true")
+                .Order("published_at", Supabase.Postgrest.Constants.Ordering.Descending)
+                .Limit(1)
+                .Get();
+
+            var article = featured.Models.FirstOrDefault();
+            return article == null ? null : MapJournalArticleListDto(article);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public async Task<Response<List<ContentItemDTO>>> GetPublishedDesignHistory()
     {
         try
@@ -781,6 +848,297 @@ public class ContentService : IContentService
         }
     }
 
+    private async Task PromoteDueScheduledArticlesAsync()
+    {
+        try
+        {
+            var due = await _client.From<JournalArticle>()
+                .Filter("status", Supabase.Postgrest.Constants.Operator.Equals, "scheduled")
+                .Filter("scheduled_at", Supabase.Postgrest.Constants.Operator.LessThanOrEqual,
+                    DateTime.UtcNow.ToString("o"))
+                .Get();
+
+            foreach (var article in due.Models)
+            {
+                await _client.From<JournalArticle>()
+                    .Filter("id", Supabase.Postgrest.Constants.Operator.Equals,
+                        article.Id.ToString())
+                    .Set(x => x.Status, "published")
+                    .Set(x => x.PublishedAt!, DateTime.UtcNow)
+                    .Set(x => x.ScheduledAt!, (DateTime?)null)
+                    .Update();
+            }
+        }
+        catch
+        {
+            // Best-effort promotion on read
+        }
+    }
+
+    private async Task ClearFeaturedArticlesAsync(Guid? exceptId)
+    {
+        var featured = await _client.From<JournalArticle>()
+            .Filter("is_featured", Supabase.Postgrest.Constants.Operator.Equals, "true")
+            .Get();
+
+        foreach (var article in featured.Models)
+        {
+            if (exceptId.HasValue && article.Id == exceptId.Value)
+                continue;
+
+            await _client.From<JournalArticle>()
+                .Filter("id", Supabase.Postgrest.Constants.Operator.Equals,
+                    article.Id.ToString())
+                .Set(x => x.IsFeatured, false)
+                .Update();
+        }
+    }
+
+    private async Task<string> ResolveUniqueSlugAsync(
+        string? requestedSlug, string title, Guid? excludeId)
+    {
+        var baseSlug = string.IsNullOrWhiteSpace(requestedSlug)
+            ? GenerateSlug(title)
+            : GenerateSlug(requestedSlug);
+
+        if (string.IsNullOrWhiteSpace(baseSlug))
+            baseSlug = "article";
+
+        var candidate = baseSlug;
+        var suffix = 2;
+
+        while (await SlugExistsAsync(candidate, excludeId))
+        {
+            if (!string.IsNullOrWhiteSpace(requestedSlug) && candidate == baseSlug)
+                return $"ERROR:Slug '{baseSlug}' is already in use";
+
+            candidate = $"{baseSlug}-{suffix}";
+            suffix++;
+            if (suffix > 100)
+                return "ERROR:Unable to generate a unique slug";
+        }
+
+        return candidate;
+    }
+
+    private async Task<bool> SlugExistsAsync(string slug, Guid? excludeId)
+    {
+        var result = await _client.From<JournalArticle>()
+            .Filter("slug", Supabase.Postgrest.Constants.Operator.Equals, slug)
+            .Get();
+
+        return result.Models.Any(x => !excludeId.HasValue || x.Id != excludeId.Value);
+    }
+
+    private static string? ValidateJournalRequest(
+        string title,
+        string? category,
+        string? status,
+        DateTime? scheduledAt,
+        bool? isFeatured,
+        List<string>? tags,
+        bool requireStatusInAllowedSet = false)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            return "Title is required";
+
+        if (!string.IsNullOrWhiteSpace(category)
+            && !AllowedJournalCategories.Contains(category.Trim()))
+        {
+            return "Category must be one of: Culture, Design, Innovation, Lifestyle, Tech";
+        }
+
+        var normalizedStatus = NormalizeStatus(status);
+        if (requireStatusInAllowedSet)
+        {
+            if (normalizedStatus == null)
+                return "Status must be one of: draft, published, scheduled, archived";
+        }
+        else if (status != null && normalizedStatus == null)
+        {
+            return "Status must be one of: draft, published, scheduled, archived";
+        }
+
+        var effectiveStatus = normalizedStatus ?? status?.Trim().ToLowerInvariant();
+
+        if (effectiveStatus == "scheduled")
+        {
+            if (!scheduledAt.HasValue)
+                return "scheduled_at is required when status is scheduled";
+
+            if (scheduledAt.Value.ToUniversalTime() <= DateTime.UtcNow)
+                return "scheduled_at must be in the future";
+        }
+
+        if (isFeatured == true
+            && !string.IsNullOrWhiteSpace(effectiveStatus)
+            && effectiveStatus != "published")
+        {
+            return "Only published articles may be featured";
+        }
+
+        if (tags != null)
+        {
+            if (tags.Count > MaxTags)
+                return $"A maximum of {MaxTags} tags is allowed";
+
+            if (tags.Any(t => (t?.Trim().Length ?? 0) > MaxTagLength))
+                return $"Each tag must be {MaxTagLength} characters or fewer";
+        }
+
+        return null;
+    }
+
+    private async Task<ContentItemDTO?> TryGetJournalDtoByIdAsync(Guid id)
+    {
+        try
+        {
+            var result = await _client.From<JournalArticle>()
+                .Filter("id", Supabase.Postgrest.Constants.Operator.Equals, id.ToString())
+                .Limit(1)
+                .Get();
+
+            var article = result.Models.FirstOrDefault();
+            return article == null ? null : MapJournalArticleToDto(article);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool LooksLikeNotFound(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return false;
+
+        return message.Contains("not found", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("0 rows", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("no rows", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("Sequence contains no elements", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? NormalizeStatus(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+            return null;
+
+        var trimmed = status.Trim().ToLowerInvariant();
+        return AllowedStatuses.Contains(trimmed) ? trimmed : null;
+    }
+
+    private static string? NormalizeCategory(string? category)
+    {
+        if (string.IsNullOrWhiteSpace(category))
+            return null;
+
+        return AllowedJournalCategories.FirstOrDefault(c =>
+            c.Equals(category.Trim(), StringComparison.OrdinalIgnoreCase))
+            ?? category.Trim();
+    }
+
+    private static List<string> NormalizeTags(List<string>? tags)
+    {
+        if (tags == null || tags.Count == 0)
+            return new List<string>();
+
+        return tags
+            .SelectMany(t => (t ?? string.Empty).Split(',',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .Select(t => t.Trim())
+            .Where(t => t.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(MaxTags)
+            .Select(t => t.Length > MaxTagLength ? t[..MaxTagLength] : t)
+            .ToList();
+    }
+
+    private static int ResolveReadTimeMinutes(int? requested, string? content)
+    {
+        if (requested.HasValue && requested.Value >= 1)
+            return requested.Value;
+
+        return ComputeReadTimeMinutes(content);
+    }
+
+    private static int ComputeReadTimeMinutes(string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return 1;
+
+        var plain = Regex.Replace(content, "<[^>]+>", " ");
+        var words = Regex.Matches(plain, @"\b[\w']+\b").Count;
+        return Math.Max(1, (int)Math.Ceiling(words / (double)WordsPerMinute));
+    }
+
+    private static string GenerateSlug(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return string.Empty;
+
+        var normalized = input.Trim().ToLowerInvariant().Normalize(NormalizationForm.FormD);
+        var sb = new StringBuilder();
+
+        foreach (var c in normalized)
+        {
+            var category = CharUnicodeInfo.GetUnicodeCategory(c);
+            if (category == UnicodeCategory.NonSpacingMark)
+                continue;
+
+            if (char.IsLetterOrDigit(c))
+                sb.Append(c);
+            else if (c is ' ' or '-' or '_')
+                sb.Append('-');
+        }
+
+        var slug = Regex.Replace(sb.ToString(), "-{2,}", "-").Trim('-');
+        return slug;
+    }
+
+    private static string? NullIfWhiteSpace(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static ContentItemDTO MapJournalArticleToDto(JournalArticle item) => new()
+    {
+        Id = item.Id,
+        Title = item.Title,
+        Content = item.Content,
+        Status = item.Status,
+        Views = item.Views,
+        CreatedAt = item.CreatedAt,
+        PublishedAt = item.PublishedAt,
+        Category = item.Category,
+        ImageUrl = item.ImageUrl,
+        Author = item.Author,
+        Excerpt = item.Excerpt,
+        Slug = item.Slug,
+        SeoTitle = item.SeoTitle,
+        Tags = item.Tags ?? new List<string>(),
+        IsFeatured = item.IsFeatured,
+        ScheduledAt = item.ScheduledAt,
+        ReadTimeMinutes = item.ReadTimeMinutes
+    };
+
+    private static ContentItemDTO MapJournalArticleListDto(JournalArticle item) => new()
+    {
+        Id = item.Id,
+        Title = item.Title,
+        Category = item.Category,
+        ImageUrl = item.ImageUrl,
+        Excerpt = item.Excerpt,
+        Author = item.Author,
+        ReadTimeMinutes = item.ReadTimeMinutes,
+        PublishedAt = item.PublishedAt,
+        Slug = item.Slug,
+        Tags = item.Tags ?? new List<string>(),
+        IsFeatured = item.IsFeatured,
+        Status = item.Status,
+        Views = item.Views,
+        CreatedAt = item.CreatedAt,
+        SeoTitle = item.SeoTitle,
+        ScheduledAt = item.ScheduledAt
+    };
+
     private static ContentItemDTO MapDesignHistoryToDto(DesignHistory item) => new()
     {
         Id = item.Id,
@@ -802,5 +1160,4 @@ public class ContentService : IContentService
         ImageUrl = item.ImageUrl,
         ProductId = item.ProductId
     };
-
 }
