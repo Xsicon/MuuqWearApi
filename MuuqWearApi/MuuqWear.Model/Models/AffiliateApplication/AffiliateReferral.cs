@@ -31,4 +31,13 @@ public class AffiliateReferral : BaseModel
 
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }
+
+    [Column("paid_at")]
+    public DateTime? PaidAt { get; set; }
+
+    [Column("payout_id")]
+    public Guid? PayoutId { get; set; }
+
+    [Column("processed_by")]
+    public Guid? ProcessedBy { get; set; }
 }

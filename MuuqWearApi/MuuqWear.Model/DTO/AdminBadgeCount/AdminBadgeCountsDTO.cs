@@ -18,6 +18,7 @@ public class AffiliateCountsDTO
     public int Approved { get; set; }
     public int Rejected { get; set; }
     public int Waitlisted { get; set; }
+    public int PendingPayouts { get; set; }
 
     public int Total => Pending + Approved + Rejected + Waitlisted;
 }

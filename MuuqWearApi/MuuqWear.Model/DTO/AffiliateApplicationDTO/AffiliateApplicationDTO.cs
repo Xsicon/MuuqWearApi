@@ -18,4 +18,5 @@ public class AffiliateApplicationDTO
     public DateTime SubmittedAt { get; set; }
     public DateTime? ReviewedAt { get; set; }
     public string? AdminNotes { get; set; }
+    public string AffiliateTier { get; set; } = "none";
 }

@@ -148,6 +148,111 @@ public class AffiliateController : BaseController
         return HandleResponse(result);
     }
 
+    [HttpGet("admin/tiers")]
+    [Authorize(Roles = "admin")]
+    public async Task<ActionResult<Response<List<AffiliateTierDTO>>>> GetAdminTiers()
+    {
+        var result = await _affiliateService.GetAdminTiers();
+        return HandleResponse(result);
+    }
+
+    [HttpGet("admin/payouts")]
+    [Authorize(Roles = "admin")]
+    public async Task<ActionResult<Response<List<AffiliatePendingPayoutDTO>>>> GetAdminPendingPayouts()
+    {
+        var result = await _affiliateService.GetAdminPendingPayouts();
+        return HandleResponse(result);
+    }
+
+    [HttpGet("admin/payouts/history")]
+    [Authorize(Roles = "admin")]
+    public async Task<ActionResult<Response<PaginatedResponse<AffiliatePayoutResultDTO>>>> GetAdminPayoutHistory(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
+    {
+        var result = await _affiliateService.GetAdminPayoutHistory(page, pageSize);
+        return HandleResponse(result);
+    }
+
+    [HttpGet("admin/payouts/{affiliateCode}/referrals")]
+    [Authorize(Roles = "admin")]
+    public async Task<ActionResult<Response<List<AffiliatePendingReferralDTO>>>> GetAdminPendingReferrals(
+        string affiliateCode)
+    {
+        var result = await _affiliateService.GetAdminPendingReferrals(affiliateCode);
+        if (!result.Success
+            && result.Message?.Contains("not found", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return NotFound(result);
+        }
+
+        return HandleResponse(result);
+    }
+
+    [HttpPost("admin/payouts/{affiliateCode}/process")]
+    [Authorize(Roles = "admin")]
+    public async Task<ActionResult<Response<AffiliatePayoutResultDTO>>> ProcessAdminPayout(
+        string affiliateCode,
+        [FromBody] ProcessAffiliatePayoutDTO? request)
+    {
+        var adminUserId = GetUserId();
+        if (adminUserId == Guid.Empty)
+            return Unauthorized(Response<AffiliatePayoutResultDTO>.Fail("Not authenticated"));
+
+        var result = await _affiliateService.ProcessAdminPayout(
+            affiliateCode, request ?? new ProcessAffiliatePayoutDTO(), adminUserId);
+
+        if (!result.Success
+            && result.Message?.Contains("not found", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return NotFound(result);
+        }
+
+        return HandleResponse(result);
+    }
+
+    [HttpGet("admin/tiers/{slug}")]
+    [Authorize(Roles = "admin")]
+    public async Task<ActionResult<Response<AffiliateTierDTO>>> GetAdminTierBySlug(string slug)
+    {
+        var result = await _affiliateService.GetAdminTierBySlug(slug);
+        if (!result.Success
+            && result.Message?.Contains("not found", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return NotFound(result);
+        }
+
+        return HandleResponse(result);
+    }
+
+    [HttpPut("admin/tiers/{slug}")]
+    [Authorize(Roles = "admin")]
+    public async Task<ActionResult<Response<AffiliateTierDTO>>> UpdateAdminTier(
+        string slug,
+        [FromBody] UpdateAffiliateTierDTO request)
+    {
+        if (request == null)
+            return BadRequest(Response<AffiliateTierDTO>.Fail("Request body is required"));
+
+        var adminUserId = GetUserId();
+        var result = await _affiliateService.UpdateAdminTier(slug, request, adminUserId);
+        if (!result.Success
+            && result.Message?.Contains("not found", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return NotFound(result);
+        }
+
+        return HandleResponse(result);
+    }
+
+    [HttpGet("tiers")]
+    [AllowAnonymous]
+    public async Task<ActionResult<Response<List<AffiliateTierDTO>>>> GetPublicTiers()
+    {
+        var result = await _affiliateService.GetPublicTiers();
+        return HandleResponse(result);
+    }
+
     /// <summary>
     /// Get number of spots remaining (public endpoint)
     /// </summary>
@@ -160,20 +265,11 @@ public class AffiliateController : BaseController
     }
 
     [HttpPost("admin/approve/{applicationId}")]
-    // TODO: Add [Authorize(Roles = "Admin")] when role system is ready
     [Authorize(Roles = "admin")]
-    public async Task<ActionResult> ApproveApplication(Guid applicationId)
+    public async Task<ActionResult<Response<bool>>> ApproveApplication(Guid applicationId)
     {
         var result = await _affiliateService.ApproveApplication(applicationId);
-
-        if (!result.Success)
-            return BadRequest(new { message = result.Message });
-
-        return Ok(new
-        {
-            success = true,
-            message = result.Message
-        });
+        return HandleResponse(result);
     }
 
     // =============================================

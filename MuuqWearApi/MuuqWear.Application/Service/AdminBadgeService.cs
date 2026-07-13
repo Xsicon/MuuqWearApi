@@ -2,6 +2,8 @@
 using MuuqWear.Application.Interfaces;
 using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.AdminBadgeCount;
+using MuuqWear.Model.Models.AffiliateApplication;
+using MuuqWear.Model.Models.Profiles;
 using Supabase;
 
 namespace MuuqWear.Application.Service;
@@ -23,17 +25,21 @@ public class AdminBadgeService : IAdminBadgeService
             var totalProducts = CountProducts();
             var affiliateCounts = CountAffiliateApplications();
             var openTickets = CountOpenTickets();
+            var pendingPayouts = CountPendingPayoutAffiliates();
 
             await Task.WhenAll(
                 pendingOrders, totalCustomers, totalProducts,
-                affiliateCounts, openTickets);
+                affiliateCounts, openTickets, pendingPayouts);
+
+            var affiliate = affiliateCounts.Result;
+            affiliate.PendingPayouts = pendingPayouts.Result;
 
             var dto = new AdminBadgeCountsDTO
             {
                 PendingOrders = pendingOrders.Result,
                 TotalCustomers = totalCustomers.Result,
                 TotalProducts = totalProducts.Result,
-                AffiliateCounts = affiliateCounts.Result,
+                AffiliateCounts = affiliate,
                 OpenTickets = openTickets.Result
             };
 
@@ -46,8 +52,6 @@ public class AdminBadgeService : IAdminBadgeService
             return Response<AdminBadgeCountsDTO>.Fail($"Error: {ex.Message}");
         }
     }
-
-    // ── individual count queries ──────────────────────────
 
     private Task<int> CountOrders() => CallRpc("get_orders_count",
         new Dictionary<string, object>
@@ -73,18 +77,73 @@ public class AdminBadgeService : IAdminBadgeService
             {"p_include_tickets",false }
         });
 
-    //private Task<int> CountPendingApplications() =>
-    //    CallRpc("count_pending_affiliate_applications", null);
-
-    //private Task<int> CountActiveChats() =>
-    //    CallRpc("count_active_chats", null);
-
     private Task<int> CountOpenTickets() => CallRpc("get_support_tickets_count",
         new Dictionary<string, object>
         {
             { "p_status", "open" }
         });
 
+    private async Task<int> CountPendingPayoutAffiliates()
+    {
+        try
+        {
+            var result = await _adminClient.Rpc(
+                "count_affiliate_pending_payout_affiliates", null);
+            var content = result.Content?.Trim('"') ?? "0";
+            if (int.TryParse(content, out var value))
+                return value;
+
+            // Fallback if RPC not deployed yet
+            return await CountPendingPayoutAffiliatesFallbackAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[AdminBadge] CountPendingPayoutAffiliates error: {ex.Message}");
+            try
+            {
+                return await CountPendingPayoutAffiliatesFallbackAsync();
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+    }
+
+    private async Task<int> CountPendingPayoutAffiliatesFallbackAsync()
+    {
+        var pending = await _adminClient
+            .From<AffiliateReferral>()
+            .Filter("status", Supabase.Postgrest.Constants.Operator.Equals, "pending")
+            .Get();
+
+        var codes = pending.Models
+            .Where(r => r.CommissionAmount > 0)
+            .Select(r => r.AffiliateCode)
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (codes.Count == 0)
+            return 0;
+
+        var profiles = await _adminClient
+            .From<Profiles>()
+            .Filter("affiliate_code",
+                Supabase.Postgrest.Constants.Operator.In,
+                codes.Select(c => (object)c).ToList())
+            .Get();
+
+        var approved = profiles.Models
+            .Where(p => string.Equals(
+                p.AffiliateApplicationStatus, "approved", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(p.AffiliateCode))
+            .Select(p => p.AffiliateCode!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return codes.Count(c => approved.Contains(c));
+    }
 
     private async Task<AffiliateCountsDTO> CountAffiliateApplications()
     {
@@ -121,11 +180,6 @@ public class AdminBadgeService : IAdminBadgeService
         public int Count { get; set; }
     }
 
-    // Internal helper class — keep private to the service file
-    /// <summary>
-    /// Calls a SQL function that returns a single int. Returns 0 on parse
-    /// failure — defensive for navbar resilience.
-    /// </summary>
     private async Task<int> CallRpc(string functionName, Dictionary<string, object>? parameters)
     {
         var result = await _adminClient.Rpc(functionName, parameters);

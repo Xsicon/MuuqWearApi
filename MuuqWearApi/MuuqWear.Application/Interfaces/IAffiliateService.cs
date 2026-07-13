@@ -27,9 +27,9 @@ public interface IAffiliateService
     Task<Response<AffiliateInfoDTO>> GetAffiliateInfo(Guid userId);
     Task<Response<bool>> ValidateAffiliateCode(string affiliateCode);
     Task<Response<bool>> TrackClick(TrackClickRequestDTO request);
-    Task<Response<bool>> HasRecentClick(string affiliateCode, string ipAddress);  //  ADD THIS
-    Task<Response<int>> GetCommissionRate(string affiliateCode);
-    Task<Response<bool>> TrackOrderReferral(Guid orderId, Guid userId, decimal orderTotal, string? affiliateCode);  //  ADD THIS
+    Task<Response<bool>> HasRecentClick(string affiliateCode, string ipAddress);
+    Task<Response<decimal>> GetCommissionRate(string affiliateCode);
+    Task<Response<bool>> TrackOrderReferral(Guid orderId, Guid userId, decimal orderTotal, string? affiliateCode);
     Task<Response<PerformanceChartDTO>> GetPerformanceChart(string affiliateCode);
     Task<Response<PaginatedResponse<PartnerStoreProductDTO>>> GetPartnerStoreProducts(
         Guid userId,
@@ -37,4 +37,19 @@ public interface IAffiliateService
         int pageSize = 15); Task<Response<AffiliatePurchaseLimitDTO>> GetPurchaseLimitStatus(Guid userId);
     Task<Response<bool>> CanPurchase(Guid userId, int quantity);
     Task<Response<List<RecentReferralDTO>>> GetRecentReferrals(Guid userId);
+
+    // Tier settings
+    Task<Response<List<AffiliateTierDTO>>> GetAdminTiers();
+    Task<Response<AffiliateTierDTO>> GetAdminTierBySlug(string slug);
+    Task<Response<AffiliateTierDTO>> UpdateAdminTier(
+        string slug, UpdateAffiliateTierDTO request, Guid adminUserId);
+    Task<Response<List<AffiliateTierDTO>>> GetPublicTiers();
+
+    // Admin payouts
+    Task<Response<List<AffiliatePendingPayoutDTO>>> GetAdminPendingPayouts();
+    Task<Response<List<AffiliatePendingReferralDTO>>> GetAdminPendingReferrals(string affiliateCode);
+    Task<Response<AffiliatePayoutResultDTO>> ProcessAdminPayout(
+        string affiliateCode, ProcessAffiliatePayoutDTO request, Guid adminUserId);
+    Task<Response<PaginatedResponse<AffiliatePayoutResultDTO>>> GetAdminPayoutHistory(
+        int page = 1, int pageSize = 20);
 }

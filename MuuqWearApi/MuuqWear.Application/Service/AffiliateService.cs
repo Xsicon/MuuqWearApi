@@ -1,4 +1,5 @@
-﻿using MuuqWear.API.Shared;
+﻿using Microsoft.Extensions.Caching.Memory;
+using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
 using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.AffiliateApplicationDTO;
@@ -12,17 +13,24 @@ namespace MuuqWear.Application.Service;
 
 public class AffiliateService : IAffiliateService
 {
+    private const string TierCacheKey = "affiliate_tiers_all";
+    private static readonly TimeSpan TierCacheTtl = TimeSpan.FromMinutes(5);
+    private const decimal FallbackCommissionRate = 5m;
+
     private readonly Supabase.Client _client;
     private readonly Supabase.Client _adminClient;
+    private readonly IMemoryCache _cache;
     private const int MONTHLY_PURCHASE_LIMIT = 20;
     private const decimal AFFILIATE_DISCOUNT_PERCENTAGE = 0.25m;
 
     public AffiliateService(
         SupabaseClientFactory factory,
-        SupabaseAdminClientFactory adminFactory)
+        SupabaseAdminClientFactory adminFactory,
+        IMemoryCache cache)
     {
         _client = factory.CreateClient();
         _adminClient = adminFactory.CreateClient();
+        _cache = cache;
     }
 
     // =============================================
@@ -202,7 +210,12 @@ public class AffiliateService : IAffiliateService
                 applications = allResult.Models;
             }
 
-            var dtos = applications.Select(MapToDTO).ToList();
+            var tiersByUserId = await FetchAffiliateTiersByUserIdsAsync(
+                applications.Select(a => a.UserId));
+
+            var dtos = applications
+                .Select(app => MapToDTO(app, tiersByUserId.GetValueOrDefault(app.UserId, "none")))
+                .ToList();
 
             return Response<List<AffiliateApplicationDTO>>.SuccessResponse(
                 dtos, "Applications fetched successfully");
@@ -401,7 +414,7 @@ public class AffiliateService : IAffiliateService
         }
     }
 
-    private AffiliateApplicationDTO MapToDTO(AffiliateApplication app)
+    private AffiliateApplicationDTO MapToDTO(AffiliateApplication app, string affiliateTier = "none")
     {
         return new AffiliateApplicationDTO
         {
@@ -418,7 +431,8 @@ public class AffiliateService : IAffiliateService
             SampleFiles = app.SampleFiles,  //  ADD
             SubmittedAt = app.SubmittedAt,
             ReviewedAt = app.ReviewedAt,
-            AdminNotes = app.AdminNotes
+            AdminNotes = app.AdminNotes,
+            AffiliateTier = affiliateTier
         };
     }
 
@@ -731,37 +745,288 @@ public class AffiliateService : IAffiliateService
     // =============================================
     // GET COMMISSION RATE FOR AFFILIATE
     // =============================================
-    public async Task<Response<int>> GetCommissionRate(string affiliateCode)
+    public async Task<Response<decimal>> GetCommissionRate(string affiliateCode)
     {
         try
         {
-            // Get affiliate's profile to check their tier
             var profile = await _client
                 .From<Profiles>()
                 .Where(p => p.AffiliateCode == affiliateCode)
                 .Single();
 
             if (profile == null)
-                return Response<int>.Fail("Affiliate not found");
+                return Response<decimal>.Fail("Affiliate not found");
 
-            // Map tier to commission rate
-            int rate = profile.AffiliateTier?.ToLower() switch
-            {
-                "bronze" => 5,
-                "silver" => 10,
-                "gold" => 15,
-                _ => 5  // Default to bronze if tier is null or unknown
-            };
+            var slug = string.IsNullOrWhiteSpace(profile.AffiliateTier)
+                ? "bronze"
+                : profile.AffiliateTier.Trim().ToLowerInvariant();
 
-            return Response<int>.SuccessResponse(
+            var tier = await GetTierBySlugCachedAsync(slug);
+            if (tier == null || !tier.IsActive)
+                tier = await GetTierBySlugCachedAsync("bronze");
+
+            var rate = tier?.CommissionRatePercent ?? FallbackCommissionRate;
+            var display = tier?.DisplayName ?? profile.AffiliateTier ?? "Bronze";
+
+            return Response<decimal>.SuccessResponse(
                 rate,
-                $"{profile.AffiliateTier ?? "Bronze"} tier: {rate}% commission");
+                $"{display} tier: {rate}% commission");
         }
         catch (Exception ex)
         {
-            return Response<int>.Fail($"Error getting commission rate: {ex.Message}");
+            return Response<decimal>.Fail($"Error getting commission rate: {ex.Message}");
         }
     }
+
+    public async Task<Response<List<AffiliateTierDTO>>> GetAdminTiers()
+    {
+        try
+        {
+            var tiers = await LoadAllTiersFromDbAsync();
+            return Response<List<AffiliateTierDTO>>.SuccessResponse(
+                tiers.Select(MapTierToDto).ToList(),
+                "Tiers fetched");
+        }
+        catch (Exception ex)
+        {
+            return Response<List<AffiliateTierDTO>>.Fail("Error: " + ex.Message);
+        }
+    }
+
+    public async Task<Response<AffiliateTierDTO>> GetAdminTierBySlug(string slug)
+    {
+        try
+        {
+            var normalized = NormalizeSlug(slug);
+            if (normalized == null)
+                return Response<AffiliateTierDTO>.Fail("Invalid tier slug");
+
+            var tier = await FetchTierBySlugAsync(normalized);
+            if (tier == null)
+                return Response<AffiliateTierDTO>.Fail("Tier not found");
+
+            return Response<AffiliateTierDTO>.SuccessResponse(
+                MapTierToDto(tier), "Tier fetched");
+        }
+        catch (Exception ex)
+        {
+            return Response<AffiliateTierDTO>.Fail("Error: " + ex.Message);
+        }
+    }
+
+    public async Task<Response<AffiliateTierDTO>> UpdateAdminTier(
+        string slug, UpdateAffiliateTierDTO request, Guid adminUserId)
+    {
+        try
+        {
+            var normalized = NormalizeSlug(slug);
+            if (normalized == null)
+                return Response<AffiliateTierDTO>.Fail("Invalid tier slug");
+
+            var existing = await FetchTierBySlugAsync(normalized);
+            if (existing == null)
+                return Response<AffiliateTierDTO>.Fail("Tier not found");
+
+            var proposed = CloneTier(existing);
+            ApplyTierUpdate(proposed, request);
+
+            var validationError = await ValidateTierUpdateAsync(proposed);
+            if (validationError != null)
+                return Response<AffiliateTierDTO>.Fail(validationError);
+
+            var updated = (await _adminClient
+                .From<AffiliateTier>()
+                .Filter("slug", Supabase.Postgrest.Constants.Operator.Equals, normalized)
+                .Set(x => x.DisplayName, proposed.DisplayName)
+                .Set(x => x.ItemsSoldThreshold, proposed.ItemsSoldThreshold)
+                .Set(x => x.CommissionRatePercent, proposed.CommissionRatePercent)
+                .Set(x => x.ReferralDiscountPercent, proposed.ReferralDiscountPercent)
+                .Set(x => x.SortOrder, proposed.SortOrder)
+                .Set(x => x.IsActive, proposed.IsActive)
+                .Set(x => x.UpdatedAt, DateTime.UtcNow)
+                .Set(x => x.UpdatedBy!, adminUserId == Guid.Empty ? null : adminUserId)
+                .Update()).Models.FirstOrDefault();
+
+            if (updated == null)
+                return Response<AffiliateTierDTO>.Fail("Failed to update tier");
+
+            InvalidateTierCache();
+
+            return Response<AffiliateTierDTO>.SuccessResponse(
+                MapTierToDto(updated), "Tier updated");
+        }
+        catch (Exception ex)
+        {
+            return Response<AffiliateTierDTO>.Fail("Error: " + ex.Message);
+        }
+    }
+
+    public async Task<Response<List<AffiliateTierDTO>>> GetPublicTiers()
+    {
+        try
+        {
+            var tiers = await GetCachedTiersAsync();
+            var active = tiers
+                .Where(t => t.IsActive)
+                .OrderBy(t => t.SortOrder)
+                .Select(MapTierToDto)
+                .ToList();
+
+            return Response<List<AffiliateTierDTO>>.SuccessResponse(
+                active, "Tiers fetched");
+        }
+        catch (Exception ex)
+        {
+            return Response<List<AffiliateTierDTO>>.Fail("Error: " + ex.Message);
+        }
+    }
+
+    private async Task<List<AffiliateTier>> GetCachedTiersAsync()
+    {
+        if (_cache.TryGetValue(TierCacheKey, out List<AffiliateTier>? cached)
+            && cached != null)
+        {
+            return cached;
+        }
+
+        var tiers = await LoadAllTiersFromDbAsync();
+        _cache.Set(TierCacheKey, tiers, TierCacheTtl);
+        return tiers;
+    }
+
+    private async Task<List<AffiliateTier>> LoadAllTiersFromDbAsync()
+    {
+        var result = await _adminClient
+            .From<AffiliateTier>()
+            .Order("sort_order", Supabase.Postgrest.Constants.Ordering.Ascending)
+            .Get();
+
+        return result.Models;
+    }
+
+    private async Task<AffiliateTier?> GetTierBySlugCachedAsync(string slug)
+    {
+        var tiers = await GetCachedTiersAsync();
+        return tiers.FirstOrDefault(t =>
+            t.Slug.Equals(slug, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task<AffiliateTier?> FetchTierBySlugAsync(string slug)
+    {
+        var result = await _adminClient
+            .From<AffiliateTier>()
+            .Filter("slug", Supabase.Postgrest.Constants.Operator.Equals, slug)
+            .Limit(1)
+            .Get();
+
+        return result.Models.FirstOrDefault();
+    }
+
+    private void InvalidateTierCache() => _cache.Remove(TierCacheKey);
+
+    private async Task<string?> ValidateTierUpdateAsync(AffiliateTier proposed)
+    {
+        if (string.IsNullOrWhiteSpace(proposed.DisplayName))
+            return "Display name is required";
+
+        if (proposed.CommissionRatePercent < 0 || proposed.CommissionRatePercent > 100)
+            return "Commission rate must be between 0 and 100";
+
+        if (proposed.ReferralDiscountPercent < 0 || proposed.ReferralDiscountPercent > 100)
+            return "Referral discount must be between 0 and 100";
+
+        if (proposed.ItemsSoldThreshold < 0)
+            return "Items sold threshold cannot be negative";
+
+        var allTiers = await LoadAllTiersFromDbAsync();
+        var projected = allTiers
+            .Select(t => t.Id == proposed.Id ? proposed : t)
+            .ToList();
+
+        if (!projected.Any(t => t.IsActive))
+            return "At least one tier must remain active";
+
+        if (proposed.Slug.Equals("bronze", StringComparison.OrdinalIgnoreCase)
+            && !proposed.IsActive)
+        {
+            return "Cannot deactivate the bronze tier (default approval tier)";
+        }
+
+        var activeOrdered = projected
+            .Where(t => t.IsActive)
+            .OrderBy(t => t.SortOrder)
+            .ThenBy(t => t.Slug)
+            .ToList();
+
+        for (var i = 1; i < activeOrdered.Count; i++)
+        {
+            if (activeOrdered[i].ItemsSoldThreshold
+                <= activeOrdered[i - 1].ItemsSoldThreshold)
+            {
+                return "Items sold thresholds must be strictly increasing by sort order "
+                    + $"({activeOrdered[i - 1].DisplayName} < {activeOrdered[i].DisplayName})";
+            }
+        }
+
+        return null;
+    }
+
+    private static void ApplyTierUpdate(AffiliateTier target, UpdateAffiliateTierDTO request)
+    {
+        if (request.DisplayName != null)
+            target.DisplayName = request.DisplayName.Trim();
+
+        if (request.ItemsSoldThreshold.HasValue)
+            target.ItemsSoldThreshold = request.ItemsSoldThreshold.Value;
+
+        if (request.CommissionRatePercent.HasValue)
+            target.CommissionRatePercent = request.CommissionRatePercent.Value;
+
+        if (request.ReferralDiscountPercent.HasValue)
+            target.ReferralDiscountPercent = request.ReferralDiscountPercent.Value;
+
+        if (request.SortOrder.HasValue)
+            target.SortOrder = request.SortOrder.Value;
+
+        if (request.IsActive.HasValue)
+            target.IsActive = request.IsActive.Value;
+    }
+
+    private static AffiliateTier CloneTier(AffiliateTier source) => new()
+    {
+        Id = source.Id,
+        Slug = source.Slug,
+        DisplayName = source.DisplayName,
+        ItemsSoldThreshold = source.ItemsSoldThreshold,
+        CommissionRatePercent = source.CommissionRatePercent,
+        ReferralDiscountPercent = source.ReferralDiscountPercent,
+        SortOrder = source.SortOrder,
+        IsActive = source.IsActive,
+        UpdatedAt = source.UpdatedAt,
+        UpdatedBy = source.UpdatedBy
+    };
+
+    private static string? NormalizeSlug(string? slug)
+    {
+        if (string.IsNullOrWhiteSpace(slug))
+            return null;
+
+        return slug.Trim().ToLowerInvariant();
+    }
+
+    private static AffiliateTierDTO MapTierToDto(AffiliateTier tier) => new()
+    {
+        Id = tier.Id,
+        Slug = tier.Slug,
+        DisplayName = tier.DisplayName,
+        ItemsSoldThreshold = tier.ItemsSoldThreshold,
+        CommissionRatePercent = tier.CommissionRatePercent,
+        ReferralDiscountPercent = tier.ReferralDiscountPercent,
+        SortOrder = tier.SortOrder,
+        IsActive = tier.IsActive,
+        UpdatedAt = tier.UpdatedAt
+    };
+
     // =============================================
     // TRACK ORDER REFERRAL
     // =============================================
@@ -793,7 +1058,7 @@ public class AffiliateService : IAffiliateService
                 return Response<bool>.Fail("Failed to get commission rate");
             }
 
-            int rate = rateResponse.Data;
+            decimal rate = rateResponse.Data;
 
             // STEP 4: Calculate commission
             decimal commissionAmount = orderTotal * (rate / 100m);
@@ -807,7 +1072,7 @@ public class AffiliateService : IAffiliateService
                 UserId = userId,
                 OrderTotal = orderTotal,
                 CommissionAmount = commissionAmount,
-                CommissionRate = rate,
+                CommissionRate = (int)Math.Round(rate, MidpointRounding.AwayFromZero),
                 Status = "pending",
                 CreatedAt = DateTime.UtcNow
             };
@@ -1396,6 +1661,385 @@ public class AffiliateService : IAffiliateService
         // Get last 4 characters
         var last4 = orderNumber.Substring(orderNumber.Length - 4);
         return $"***{last4}";
+    }
+
+    // =============================================
+    // ADMIN PAYOUTS
+    // =============================================
+
+    public async Task<Response<List<AffiliatePendingPayoutDTO>>> GetAdminPendingPayouts()
+    {
+        try
+        {
+            var pending = await _adminClient
+                .From<AffiliateReferral>()
+                .Filter("status", Supabase.Postgrest.Constants.Operator.Equals, "pending")
+                .Get();
+
+            var referrals = pending.Models;
+            if (referrals.Count == 0)
+            {
+                return Response<List<AffiliatePendingPayoutDTO>>.SuccessResponse(
+                    new List<AffiliatePendingPayoutDTO>(), "Pending payouts fetched");
+            }
+
+            var codes = referrals
+                .Select(r => r.AffiliateCode)
+                .Where(c => !string.IsNullOrWhiteSpace(c))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var profiles = await FetchAffiliateProfilesByCodesAsync(codes);
+            var approvedProfiles = profiles
+                .Where(p => string.Equals(
+                    p.AffiliateApplicationStatus, "approved", StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrWhiteSpace(p.AffiliateCode))
+                .GroupBy(p => p.AffiliateCode!, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.First(),
+                    StringComparer.OrdinalIgnoreCase);
+
+            var groups = referrals
+                .Where(r => approvedProfiles.ContainsKey(r.AffiliateCode))
+                .GroupBy(r => r.AffiliateCode, StringComparer.OrdinalIgnoreCase)
+                .Select(g =>
+                {
+                    var profile = approvedProfiles[g.Key];
+                    return new AffiliatePendingPayoutDTO
+                    {
+                        AffiliateCode = g.Key,
+                        AffiliateName = profile.FullName ?? g.Key,
+                        AffiliateTier = profile.AffiliateTier ?? "bronze",
+                        TotalAmount = g.Sum(r => r.CommissionAmount),
+                        ReferralCount = g.Count(),
+                        OldestPendingDate = g.Min(r => r.CreatedAt),
+                        Status = "pending"
+                    };
+                })
+                .Where(p => p.TotalAmount > 0)
+                .OrderBy(p => p.OldestPendingDate)
+                .ToList();
+
+            return Response<List<AffiliatePendingPayoutDTO>>.SuccessResponse(
+                groups, "Pending payouts fetched");
+        }
+        catch (Exception ex)
+        {
+            return Response<List<AffiliatePendingPayoutDTO>>.Fail("Error: " + ex.Message);
+        }
+    }
+
+    public async Task<Response<List<AffiliatePendingReferralDTO>>> GetAdminPendingReferrals(
+        string affiliateCode)
+    {
+        try
+        {
+            var code = affiliateCode?.Trim();
+            if (string.IsNullOrWhiteSpace(code))
+                return Response<List<AffiliatePendingReferralDTO>>.Fail("Affiliate code is required");
+
+            var profile = await GetApprovedAffiliateByCodeAsync(code);
+            if (profile == null)
+                return Response<List<AffiliatePendingReferralDTO>>.Fail("Affiliate not found");
+
+            var pending = await _adminClient
+                .From<AffiliateReferral>()
+                .Filter("affiliate_code", Supabase.Postgrest.Constants.Operator.Equals, code)
+                .Filter("status", Supabase.Postgrest.Constants.Operator.Equals, "pending")
+                .Order("created_at", Supabase.Postgrest.Constants.Ordering.Ascending)
+                .Get();
+
+            var referrals = pending.Models;
+            var orderIds = referrals.Select(r => r.OrderId).Distinct().ToList();
+            var orderNumbers = await FetchOrderNumbersAsync(orderIds);
+
+            var items = referrals.Select(r =>
+            {
+                orderNumbers.TryGetValue(r.OrderId, out var orderNumber);
+                return new AffiliatePendingReferralDTO
+                {
+                    Id = r.Id,
+                    OrderId = r.OrderId,
+                    OrderNumber = orderNumber ?? string.Empty,
+                    OrderTotal = r.OrderTotal,
+                    CommissionAmount = r.CommissionAmount,
+                    CommissionRate = r.CommissionRate,
+                    CreatedAt = r.CreatedAt,
+                    MaskedCustomer = MaskOrderNumber(orderNumber ?? string.Empty)
+                };
+            }).ToList();
+
+            return Response<List<AffiliatePendingReferralDTO>>.SuccessResponse(
+                items, "Pending referrals fetched");
+        }
+        catch (Exception ex)
+        {
+            return Response<List<AffiliatePendingReferralDTO>>.Fail("Error: " + ex.Message);
+        }
+    }
+
+    public async Task<Response<AffiliatePayoutResultDTO>> ProcessAdminPayout(
+        string affiliateCode, ProcessAffiliatePayoutDTO request, Guid adminUserId)
+    {
+        try
+        {
+            if (adminUserId == Guid.Empty)
+                return Response<AffiliatePayoutResultDTO>.Fail("Not authenticated");
+
+            var code = affiliateCode?.Trim();
+            if (string.IsNullOrWhiteSpace(code))
+                return Response<AffiliatePayoutResultDTO>.Fail("Affiliate code is required");
+
+            var paymentMethod = string.IsNullOrWhiteSpace(request?.PaymentMethod)
+                ? "manual"
+                : request!.PaymentMethod.Trim().ToLowerInvariant();
+
+            var allowedMethods = new[] { "manual", "paypal", "bank_transfer", "store_credit" };
+            if (!allowedMethods.Contains(paymentMethod))
+            {
+                return Response<AffiliatePayoutResultDTO>.Fail(
+                    "Invalid payment method. Allowed: manual, paypal, bank_transfer, store_credit");
+            }
+
+            var adminNotes = request?.AdminNotes?.Trim();
+            if (adminNotes != null && adminNotes.Length > 2000)
+                return Response<AffiliatePayoutResultDTO>.Fail("Admin notes max length is 2000 characters");
+
+            var rpcParams = new Dictionary<string, object>
+            {
+                { "p_affiliate_code", code },
+                { "p_processed_by", adminUserId },
+                { "p_payment_method", paymentMethod }
+            };
+            if (!string.IsNullOrWhiteSpace(adminNotes))
+                rpcParams["p_admin_notes"] = adminNotes;
+
+            var rpcResult = await _adminClient.Rpc(
+                "process_affiliate_payout", rpcParams);
+
+            var payload = ParseProcessPayoutRpc(rpcResult.Content);
+            if (payload == null)
+                return Response<AffiliatePayoutResultDTO>.Fail("Failed to process payout");
+
+            if (!payload.Success)
+            {
+                return Response<AffiliatePayoutResultDTO>.Fail(
+                    string.IsNullOrWhiteSpace(payload.Error)
+                        ? "Failed to process payout"
+                        : payload.Error!);
+            }
+
+            return Response<AffiliatePayoutResultDTO>.SuccessResponse(
+                new AffiliatePayoutResultDTO
+                {
+                    PayoutId = payload.PayoutId ?? Guid.Empty,
+                    AffiliateCode = payload.AffiliateCode ?? code,
+                    AffiliateName = payload.AffiliateName ?? code,
+                    TotalAmount = payload.TotalAmount,
+                    ReferralCount = payload.ReferralCount,
+                    ProcessedAt = payload.ProcessedAt ?? DateTime.UtcNow,
+                    Status = payload.Status ?? "completed",
+                    PaymentMethod = payload.PaymentMethod ?? paymentMethod
+                },
+                "Payout processed");
+        }
+        catch (Exception ex)
+        {
+            return Response<AffiliatePayoutResultDTO>.Fail("Error: " + ex.Message);
+        }
+    }
+
+    private static ProcessPayoutRpcResult? ParseProcessPayoutRpc(string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return null;
+
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<ProcessPayoutRpcResult>(
+                content,
+                new System.Text.Json.JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true,
+                    PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower
+                });
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private sealed class ProcessPayoutRpcResult
+    {
+        public bool Success { get; set; }
+        public string? Error { get; set; }
+        public Guid? PayoutId { get; set; }
+        public string? AffiliateCode { get; set; }
+        public string? AffiliateName { get; set; }
+        public decimal TotalAmount { get; set; }
+        public int ReferralCount { get; set; }
+        public DateTime? ProcessedAt { get; set; }
+        public string? Status { get; set; }
+        public string? PaymentMethod { get; set; }
+    }
+
+    public async Task<Response<PaginatedResponse<AffiliatePayoutResultDTO>>> GetAdminPayoutHistory(
+        int page = 1, int pageSize = 20)
+    {
+        try
+        {
+            if (page < 1) page = 1;
+            if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
+            var offset = (page - 1) * pageSize;
+
+            int totalCount;
+            try
+            {
+                totalCount = await _adminClient
+                    .From<AffiliatePayout>()
+                    .Count(Supabase.Postgrest.Constants.CountType.Exact);
+            }
+            catch
+            {
+                var fallback = await _adminClient.From<AffiliatePayout>().Get();
+                totalCount = fallback.Models.Count;
+            }
+
+            var pageResult = await _adminClient
+                .From<AffiliatePayout>()
+                .Order("processed_at", Supabase.Postgrest.Constants.Ordering.Descending)
+                .Range(offset, offset + pageSize - 1)
+                .Get();
+
+            var pageItems = pageResult.Models;
+
+            var codes = pageItems.Select(p => p.AffiliateCode).Distinct().ToList();
+            var profiles = await FetchAffiliateProfilesByCodesAsync(codes);
+            var nameByCode = profiles
+                .Where(p => !string.IsNullOrWhiteSpace(p.AffiliateCode))
+                .GroupBy(p => p.AffiliateCode!, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.First().FullName ?? g.Key,
+                    StringComparer.OrdinalIgnoreCase);
+
+            var totalPages = totalCount == 0
+                ? 0
+                : (int)Math.Ceiling((double)totalCount / pageSize);
+
+            var data = pageItems.Select(p => new AffiliatePayoutResultDTO
+            {
+                PayoutId = p.Id,
+                AffiliateCode = p.AffiliateCode,
+                AffiliateName = nameByCode.TryGetValue(p.AffiliateCode, out var name)
+                    ? name
+                    : p.AffiliateCode,
+                TotalAmount = p.TotalAmount,
+                ReferralCount = p.ReferralCount,
+                ProcessedAt = p.ProcessedAt,
+                Status = p.Status,
+                PaymentMethod = p.PaymentMethod
+            }).ToList();
+
+            return Response<PaginatedResponse<AffiliatePayoutResultDTO>>.SuccessResponse(
+                new PaginatedResponse<AffiliatePayoutResultDTO>
+                {
+                    Data = data,
+                    TotalCount = totalCount,
+                    Page = page,
+                    PageSize = pageSize,
+                    TotalPages = totalPages,
+                    HasMore = page < totalPages,
+                    HasPreviousPage = page > 1,
+                    HasNextPage = page < totalPages
+                },
+                "Payout history fetched");
+        }
+        catch (Exception ex)
+        {
+            return Response<PaginatedResponse<AffiliatePayoutResultDTO>>.Fail(
+                "Error: " + ex.Message);
+        }
+    }
+
+    private async Task<Profiles?> GetApprovedAffiliateByCodeAsync(string affiliateCode)
+    {
+        var result = await _adminClient
+            .From<Profiles>()
+            .Filter("affiliate_code", Supabase.Postgrest.Constants.Operator.Equals, affiliateCode)
+            .Limit(1)
+            .Get();
+
+        var profile = result.Models.FirstOrDefault();
+        if (profile == null)
+            return null;
+
+        if (!string.Equals(
+                profile.AffiliateApplicationStatus, "approved", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        return profile;
+    }
+
+    private async Task<List<Profiles>> FetchAffiliateProfilesByCodesAsync(IEnumerable<string> codes)
+    {
+        var list = codes
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (list.Count == 0)
+            return new List<Profiles>();
+
+        var result = await _adminClient
+            .From<Profiles>()
+            .Filter("affiliate_code",
+                Supabase.Postgrest.Constants.Operator.In,
+                list.Select(c => (object)c).ToList())
+            .Get();
+
+        return result.Models;
+    }
+
+    private async Task<Dictionary<Guid, string>> FetchAffiliateTiersByUserIdsAsync(IEnumerable<Guid> userIds)
+    {
+        var ids = userIds.Distinct().ToList();
+        if (ids.Count == 0)
+            return new Dictionary<Guid, string>();
+
+        var result = await _adminClient
+            .From<Profiles>()
+            .Filter("id",
+                Supabase.Postgrest.Constants.Operator.In,
+                ids.Select(id => id.ToString()).ToList())
+            .Get();
+
+        return result.Models
+            .Where(p => p.Id.HasValue)
+            .ToDictionary(
+                p => p.Id!.Value,
+                p => string.IsNullOrWhiteSpace(p.AffiliateTier) ? "none" : p.AffiliateTier,
+                EqualityComparer<Guid>.Default);
+    }
+
+    private async Task<Dictionary<Guid, string>> FetchOrderNumbersAsync(IReadOnlyList<Guid> orderIds)
+    {
+        if (orderIds.Count == 0)
+            return new Dictionary<Guid, string>();
+
+        var result = await _adminClient
+            .From<Order>()
+            .Filter("id",
+                Supabase.Postgrest.Constants.Operator.In,
+                orderIds.Select(id => id.ToString()).ToList())
+            .Get();
+
+        return result.Models
+            .Where(o => !string.IsNullOrWhiteSpace(o.OrderNumber))
+            .ToDictionary(o => o.Id, o => o.OrderNumber!);
     }
 
 }
