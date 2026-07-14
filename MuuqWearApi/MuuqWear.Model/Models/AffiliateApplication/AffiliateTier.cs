@@ -24,6 +24,15 @@ public class AffiliateTier : BaseModel
     [Column("referral_discount_percent")]
     public decimal ReferralDiscountPercent { get; set; }
 
+    [Column("quarterly_bonus_percent")]
+    public decimal QuarterlyBonusPercent { get; set; }
+
+    [Column("max_affiliates")]
+    public int? MaxAffiliates { get; set; }
+
+    [Column("perks")]
+    public List<string> Perks { get; set; } = new();
+
     [Column("sort_order")]
     public int SortOrder { get; set; }
 

@@ -1,4 +1,4 @@
-﻿using MuuqWear.Model.Models.AffiliateApplication;
+using MuuqWear.Model.Models.AffiliateApplication;
 
 namespace MuuqWear.Model.DTO.AffiliateApplicationDTO;
 
@@ -19,4 +19,10 @@ public class AffiliateApplicationDTO
     public DateTime? ReviewedAt { get; set; }
     public string? AdminNotes { get; set; }
     public string AffiliateTier { get; set; } = "none";
+    public int ItemsSold { get; set; }
+    public decimal CommissionEarned { get; set; }
+    public decimal CommissionRatePercent { get; set; }
+    public DateTime? LastSaleAt { get; set; }
+    public DateTime JoinDate { get; set; }
+    public bool IsActive { get; set; } = true;
 }

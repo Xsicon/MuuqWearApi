@@ -16,6 +16,11 @@ CREATE TABLE IF NOT EXISTS "MuuqWear".affiliate_tiers (
     referral_discount_percent numeric(5,2) NOT NULL DEFAULT 0 CHECK (
         referral_discount_percent >= 0 AND referral_discount_percent <= 100
     ),
+    quarterly_bonus_percent numeric(5,2) NOT NULL DEFAULT 0 CHECK (
+        quarterly_bonus_percent >= 0 AND quarterly_bonus_percent <= 100
+    ),
+    max_affiliates int NULL CHECK (max_affiliates IS NULL OR max_affiliates > 0),
+    perks jsonb NOT NULL DEFAULT '[]'::jsonb,
     sort_order int NOT NULL DEFAULT 0,
     is_active boolean NOT NULL DEFAULT true,
     updated_at timestamptz NOT NULL DEFAULT now(),

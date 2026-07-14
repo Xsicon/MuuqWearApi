@@ -8,6 +8,10 @@ public class AffiliateTierDTO
     public int ItemsSoldThreshold { get; set; }
     public decimal CommissionRatePercent { get; set; }
     public decimal ReferralDiscountPercent { get; set; }
+    public decimal QuarterlyBonusPercent { get; set; }
+    public int? MaxAffiliates { get; set; }
+    public List<string> Perks { get; set; } = new();
+    public int CurrentAffiliateCount { get; set; }
     public int SortOrder { get; set; }
     public bool IsActive { get; set; }
     public DateTime UpdatedAt { get; set; }
@@ -19,6 +23,10 @@ public class UpdateAffiliateTierDTO
     public int? ItemsSoldThreshold { get; set; }
     public decimal? CommissionRatePercent { get; set; }
     public decimal? ReferralDiscountPercent { get; set; }
+    public decimal? QuarterlyBonusPercent { get; set; }
+    public int? MaxAffiliates { get; set; }
+    public bool ClearMaxAffiliates { get; set; }
+    public List<string>? Perks { get; set; }
     public int? SortOrder { get; set; }
     public bool? IsActive { get; set; }
 }

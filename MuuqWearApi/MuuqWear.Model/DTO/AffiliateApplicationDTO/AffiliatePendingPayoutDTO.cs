@@ -9,6 +9,7 @@ public class AffiliatePendingPayoutDTO
     public int ReferralCount { get; set; }
     public DateTime OldestPendingDate { get; set; }
     public string Status { get; set; } = "pending";
+    public string PaymentMethod { get; set; } = "manual";
     public string FormattedDate => OldestPendingDate.ToString("MMM dd, yyyy");
     public string FormattedAmount => $"${TotalAmount:F2}";
 }

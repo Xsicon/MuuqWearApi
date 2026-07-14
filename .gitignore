@@ -482,3 +482,42 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# ---------------------------------------------------------------------------
+# Local / machine-specific (do not commit)
+# ---------------------------------------------------------------------------
+.env.*
+!.env.example
+*.local.json
+appsettings.*.Local.json
+appsettings.Local.json
+secrets.json
+**/secrets/
+connectionstrings.local.json
+
+# ASP.NET / user secrets material accidentally dropped in-repo
+**/Properties/PublishProfiles/*.pubxml.user
+*.user
+*.suo
+
+# Cursor / editor local state (shared rules may be force-added if needed)
+.cursor/
+.claude/
+*.code-workspace
+
+# Test / coverage artifacts
+TestResults/
+[Cc]overage/
+*.trx
+*.coverage
+
+# Supabase local CLI
+.supabase/
+
+# OS / editor debris
+*.orig
+*.bak
+*.tmp
+*~
+.DS_Store
+Thumbs.db

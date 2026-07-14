@@ -1,6 +1,7 @@
--- Seed canonical Bronze / Silver / Gold tiers.
--- Defaults match AffiliateService.GetCommissionRate (5% / 10% / 15%), NOT Milestones UI (2.5/5/10).
--- IDEMPOTENT: ON CONFLICT (slug) DO UPDATE.
+-- Seed canonical Bronze / Silver / Gold / Platinum tiers.
+-- Defaults match AffiliateService.GetCommissionRate (5% / 10% / 15% / 20%), NOT Milestones UI (2.5/5/10).
+-- IDEMPOTENT: ON CONFLICT (slug) DO NOTHING so admin edits are preserved on re-run.
+-- Prefer also running extend-affiliate-admin-dashboard.sql for perks/bonus/capacity columns.
 
 INSERT INTO "MuuqWear".affiliate_tiers (
     id,
@@ -45,12 +46,16 @@ INSERT INTO "MuuqWear".affiliate_tiers (
         3,
         true,
         now()
+    ),
+    (
+        'a0000001-0000-4000-8000-000000000004',
+        'platinum',
+        'Platinum',
+        1500,
+        20.00,
+        20.00,
+        4,
+        true,
+        now()
     )
-ON CONFLICT (slug) DO UPDATE SET
-    display_name = EXCLUDED.display_name,
-    items_sold_threshold = EXCLUDED.items_sold_threshold,
-    commission_rate_percent = EXCLUDED.commission_rate_percent,
-    referral_discount_percent = EXCLUDED.referral_discount_percent,
-    sort_order = EXCLUDED.sort_order,
-    is_active = EXCLUDED.is_active,
-    updated_at = now();
+ON CONFLICT (slug) DO NOTHING;

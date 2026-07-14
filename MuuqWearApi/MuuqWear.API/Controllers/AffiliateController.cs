@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
@@ -156,11 +156,52 @@ public class AffiliateController : BaseController
         return HandleResponse(result);
     }
 
+    [HttpGet("admin/stats")]
+    [Authorize(Roles = "admin")]
+    public async Task<ActionResult<Response<AffiliateAdminStatsDTO>>> GetAdminStats()
+    {
+        var result = await _affiliateService.GetAdminStats();
+        return HandleResponse(result);
+    }
+
+    [HttpPut("admin/affiliates/{userId}/status")]
+    [Authorize(Roles = "admin")]
+    public async Task<ActionResult<Response<AffiliateApplicationDTO>>> SetAffiliateActiveStatus(
+        Guid userId,
+        [FromBody] UpdateAffiliateActiveStatusDTO request)
+    {
+        if (request == null)
+            return BadRequest(Response<AffiliateApplicationDTO>.Fail("Request body is required"));
+
+        var result = await _affiliateService.SetAffiliateActiveStatus(userId, request.IsActive);
+        if (!result.Success
+            && result.Message?.Contains("not found", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return NotFound(result);
+        }
+
+        return HandleResponse(result);
+    }
+
     [HttpGet("admin/payouts")]
     [Authorize(Roles = "admin")]
     public async Task<ActionResult<Response<List<AffiliatePendingPayoutDTO>>>> GetAdminPendingPayouts()
     {
         var result = await _affiliateService.GetAdminPendingPayouts();
+        return HandleResponse(result);
+    }
+
+    [HttpPost("admin/payouts/process-all")]
+    [Authorize(Roles = "admin")]
+    public async Task<ActionResult<Response<BulkAffiliatePayoutResultDTO>>> ProcessAllAdminPayouts(
+        [FromBody] BulkProcessAffiliatePayoutsDTO? request)
+    {
+        var adminUserId = GetUserId();
+        if (adminUserId == Guid.Empty)
+            return Unauthorized(Response<BulkAffiliatePayoutResultDTO>.Fail("Not authenticated"));
+
+        var result = await _affiliateService.ProcessAllAdminPayouts(
+            request ?? new BulkProcessAffiliatePayoutsDTO(), adminUserId);
         return HandleResponse(result);
     }
 

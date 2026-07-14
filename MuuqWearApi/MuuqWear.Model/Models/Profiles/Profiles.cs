@@ -44,4 +44,13 @@ public class Profiles : BaseModel
     public string? AffiliateCode { get; set; } = string.Empty;
     [Column("affiliate_total_clicks")]
     public int AffiliateTotalClicks { get; set; } = 0;
+
+    [Column("affiliate_is_active")]
+    public bool AffiliateIsActive { get; set; } = true;
+
+    [Column("affiliate_approved_at")]
+    public DateTime? AffiliateApprovedAt { get; set; }
+
+    [Column("affiliate_preferred_payment_method")]
+    public string AffiliatePreferredPaymentMethod { get; set; } = "manual";
 }

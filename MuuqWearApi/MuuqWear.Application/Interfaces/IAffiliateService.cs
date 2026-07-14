@@ -45,11 +45,18 @@ public interface IAffiliateService
         string slug, UpdateAffiliateTierDTO request, Guid adminUserId);
     Task<Response<List<AffiliateTierDTO>>> GetPublicTiers();
 
+    // Admin dashboard
+    Task<Response<AffiliateAdminStatsDTO>> GetAdminStats();
+    Task<Response<AffiliateApplicationDTO>> SetAffiliateActiveStatus(
+        Guid userId, bool isActive);
+
     // Admin payouts
     Task<Response<List<AffiliatePendingPayoutDTO>>> GetAdminPendingPayouts();
     Task<Response<List<AffiliatePendingReferralDTO>>> GetAdminPendingReferrals(string affiliateCode);
     Task<Response<AffiliatePayoutResultDTO>> ProcessAdminPayout(
         string affiliateCode, ProcessAffiliatePayoutDTO request, Guid adminUserId);
+    Task<Response<BulkAffiliatePayoutResultDTO>> ProcessAllAdminPayouts(
+        BulkProcessAffiliatePayoutsDTO request, Guid adminUserId);
     Task<Response<PaginatedResponse<AffiliatePayoutResultDTO>>> GetAdminPayoutHistory(
         int page = 1, int pageSize = 20);
 }
