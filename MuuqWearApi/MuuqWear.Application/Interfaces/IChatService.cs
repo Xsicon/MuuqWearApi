@@ -7,8 +7,9 @@ namespace MuuqWear.Application.Interfaces;
 public interface IChatService
 {
     Task<Response<ChatMessageDTO>> SendMessage(SendMessageRequest request, Guid? userId, bool isAdmin = false);
-    Task<Response<List<ChatMessageDTO>>> GetMessages(Guid sessionId);
+    Task<Response<List<ChatMessageDTO>>> GetMessages(Guid sessionId, Guid? userId, bool isAdmin = false);
     Task<Response<List<ChatSessionDTO>>> GetActiveSessions();
+    Task<Response<ChatSessionDTO>> GetSession(Guid sessionId);
     Task<Response<bool>> CloseSession(Guid sessionId);
-    Task<Response<string>> GetSessionStatus(Guid sessionId);
+    Task<Response<string>> GetSessionStatus(Guid sessionId, Guid? userId, bool isAdmin = false);
 }

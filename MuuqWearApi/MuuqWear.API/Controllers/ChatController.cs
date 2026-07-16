@@ -38,6 +38,14 @@ public class ChatController : BaseController
         if (!userId.HasValue && string.IsNullOrWhiteSpace(request.GuestName))
             return BadRequest(Response<ChatMessageDTO>.Fail("Guest name is required"));
 
+        // Guest must supply an email for the first message that creates a session.
+        if (!userId.HasValue
+            && !request.SessionId.HasValue
+            && string.IsNullOrWhiteSpace(request.GuestEmail))
+        {
+            return BadRequest(Response<ChatMessageDTO>.Fail("Guest email is required"));
+        }
+
         var isAdmin = User.IsInRole("admin");
 
         var result = await _chatService.SendMessage(request, userId, isAdmin);
@@ -50,7 +58,16 @@ public class ChatController : BaseController
     [HttpGet("messages/{sessionId}")]
     public async Task<ActionResult<Response<List<ChatMessageDTO>>>> GetMessages(Guid sessionId)
     {
-        var result = await _chatService.GetMessages(sessionId);
+        Guid? userId = null;
+        if (User.Identity?.IsAuthenticated == true)
+            userId = GetUserId();
+
+        var isAdmin = User.IsInRole("admin");
+
+        var result = await _chatService.GetMessages(sessionId, userId, isAdmin);
+        if (!result.Success
+            && result.Message.Contains("Forbidden", StringComparison.OrdinalIgnoreCase))
+            return StatusCode(403, result);
         return HandleResponse(result);
     }
 
@@ -82,7 +99,32 @@ public class ChatController : BaseController
     [HttpGet("session/{sessionId}/status")]
     public async Task<ActionResult<Response<string>>> GetSessionStatus(Guid sessionId)
     {
-        var result = await _chatService.GetSessionStatus(sessionId);
+        Guid? userId = null;
+        if (User.Identity?.IsAuthenticated == true)
+            userId = GetUserId();
+
+        var isAdmin = User.IsInRole("admin");
+
+        var result = await _chatService.GetSessionStatus(sessionId, userId, isAdmin);
+        if (!result.Success
+            && result.Message.Contains("Forbidden", StringComparison.OrdinalIgnoreCase))
+            return StatusCode(403, result);
+        return HandleResponse(result);
+    }
+
+    /// <summary>
+    /// Load full session details (admin only).
+    /// Includes customerEmail for admin UX.
+    /// </summary>
+    [HttpGet("session/{sessionId}")]
+    [Authorize(Roles = "admin")]
+    public async Task<ActionResult<Response<ChatSessionDTO>>> GetSession(Guid sessionId)
+    {
+        var result = await _chatService.GetSession(sessionId);
+        if (!result.Success
+            && result.Message?.Contains("not found", StringComparison.OrdinalIgnoreCase) == true)
+            return NotFound(result);
+
         return HandleResponse(result);
     }
 }

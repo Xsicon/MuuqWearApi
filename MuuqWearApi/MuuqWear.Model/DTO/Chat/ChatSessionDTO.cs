@@ -4,6 +4,7 @@ public class ChatSessionDTO
 {
     public Guid Id { get; set; }
     public string CustomerName { get; set; } = string.Empty;
+    public string? CustomerEmail { get; set; }
     public string Status { get; set; } = string.Empty;
     public DateTime LastActivity { get; set; }
     public string? LastMessagePreview { get; set; }
