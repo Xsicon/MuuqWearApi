@@ -94,9 +94,10 @@ namespace MuuqWear.API.Controllers
         }
 
         [HttpGet("google-signin-url")]
-        public async Task<ActionResult<Response<string>>> GetGoogleSignInUrl()
+        public async Task<ActionResult<Response<string>>> GetGoogleSignInUrl(
+            [FromQuery] string? redirectTo = null)
         {
-            var response = await _authService.GetGoogleSignInUrl();
+            var response = await _authService.GetGoogleSignInUrl(redirectTo);
 
             if (!response.Success)
                 return BadRequest(response);

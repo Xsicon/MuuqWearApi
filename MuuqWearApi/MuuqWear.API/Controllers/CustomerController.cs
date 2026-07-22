@@ -2,13 +2,14 @@
 using Microsoft.AspNetCore.Mvc;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
+using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.CustomerDTO;
 
 namespace MuuqWear.Application.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "admin")]
+[Authorize]
 public class CustomerController : BaseController
 {
     private readonly ICustomerService _customerService;
@@ -19,6 +20,7 @@ public class CustomerController : BaseController
     }
 
     [HttpGet]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminCustomerNotesRead)]
     public async Task<ActionResult<Response<PaginatedResponse<CustomerDTO>>>> GetAll(
         [FromQuery] string? search = null,
         [FromQuery] int page = 1,
@@ -33,6 +35,7 @@ public class CustomerController : BaseController
     }
 
     [HttpGet("{customerId:guid}/notes")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminCustomerNotesRead)]
     public async Task<ActionResult<Response<List<CustomerNoteDTO>>>> GetNotes(Guid customerId)
     {
         if (customerId == Guid.Empty)
@@ -48,6 +51,7 @@ public class CustomerController : BaseController
     }
 
     [HttpPost("{customerId:guid}/notes")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminCustomers)]
     public async Task<ActionResult<Response<CustomerNoteDTO>>> CreateNote(
         Guid customerId,
         [FromBody] CreateCustomerNoteDTO request)

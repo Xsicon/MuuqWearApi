@@ -27,26 +27,49 @@ public class UpdateAdminSettingsUserDTO
 public static class AdminRoles
 {
     public const string Admin = "admin";
+    public const string OperationsManager = "operations_manager";
     public const string SupportTeam = "support_team";
-    public const string SalesTeam = "sales_team";
+    public const string Merchandising = "merchandising";
     public const string ContentTeam = "content_team";
+    public const string TechnologySystems = "technology_systems";
+    public const string SalesTeam = "sales_team";
     public const string AffiliateTeam = "affiliate_team";
+
+    /// <summary>All six admin-portal staff roles (excludes legacy sales/affiliate team slugs).</summary>
+    public static readonly string[] StaffPortal = new[]
+    {
+        Admin,
+        OperationsManager,
+        SupportTeam,
+        Merchandising,
+        ContentTeam,
+        TechnologySystems
+    };
 
     public static readonly string[] All = new[]
     {
         Admin,
+        OperationsManager,
         SupportTeam,
-        SalesTeam,
+        Merchandising,
         ContentTeam,
+        TechnologySystems,
+        SalesTeam,
         AffiliateTeam
     };
+
+    public static bool IsStaffPortalRole(string? role) =>
+        !string.IsNullOrWhiteSpace(role) && StaffPortal.Contains(role);
 
     public static string GetDisplayName(string role) => role switch
     {
         Admin => "Admin",
-        SupportTeam => "Support Team",
+        OperationsManager => "Operations Manager",
+        SupportTeam => "Customer Support",
+        Merchandising => "Merchandising",
+        ContentTeam => "Creative & Content",
+        TechnologySystems => "Technology & Systems",
         SalesTeam => "Sales Team",
-        ContentTeam => "Content Team",
         AffiliateTeam => "Affiliate Team",
         _ => role
     };

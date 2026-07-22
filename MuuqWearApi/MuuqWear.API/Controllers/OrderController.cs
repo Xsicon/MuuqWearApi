@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using MuuqWear.API.DTO;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
+using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.OrderDTO;
 using Supabase.Gotrue;
 using System.Security.Claims;
@@ -98,7 +99,7 @@ public class OrderController : BaseController
     // GET api/Order/admin?status=&search=&page=&pageSize=
     // =============================================
     [HttpGet("admin")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminOrders)]
     public async Task<ActionResult<Response<PaginatedResponse<OrderDTO>>>> GetAllOrders(
         [FromQuery] string? status = null,
         [FromQuery] string? search = null,
@@ -120,7 +121,7 @@ public class OrderController : BaseController
     // GET api/Order/admin/{orderId}
     // =============================================
     [HttpGet("admin/{orderId}")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminOrders)]
     public async Task<ActionResult<Response<OrderDTO>>> GetOrderDetail(Guid orderId)
     {
         if (orderId == Guid.Empty)
@@ -136,7 +137,7 @@ public class OrderController : BaseController
     // PATCH api/Order/admin/{orderId}/status
     // =============================================
     [HttpPatch("admin/{orderId}/status")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminOrders)]
     public async Task<ActionResult<Response<OrderDTO>>> UpdateOrderStatus(
         Guid orderId,
         [FromBody] UpdateOrderStatusDTO request)
@@ -159,7 +160,7 @@ public class OrderController : BaseController
     // PATCH api/Order/admin/bulk-status
     // =============================================
     [HttpPatch("admin/bulk-status")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminOrders)]
     public async Task<ActionResult<Response<int>>> BulkUpdateOrderStatus(
         [FromBody] BulkUpdateOrderStatusDTO request)
     {

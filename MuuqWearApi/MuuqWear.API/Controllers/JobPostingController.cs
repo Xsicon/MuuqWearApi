@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Controllers;
 using MuuqWear.Application.Interfaces;
+using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.JobApplicationDTO;
 using MuuqWear.Model.DTO.JobPostingDTO;
 
@@ -10,7 +11,6 @@ namespace MuuqWear.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "admin")]
 public class JobPostingController : BaseController
 {
     private readonly IJobPostingService _service;
@@ -24,6 +24,7 @@ public class JobPostingController : BaseController
     // ADMIN: GET ALL (open + closed)
     // =============================================
     [HttpGet]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminCareers)]
     public async Task<ActionResult<Response<List<JobPostingDTO>>>> GetAll()
     {
         var result = await _service.GetAll();
@@ -45,6 +46,7 @@ public class JobPostingController : BaseController
     // ADMIN: GET BY ID
     // =============================================
     [HttpGet("{id}")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminCareers)]
     public async Task<ActionResult<Response<JobPostingDTO>>> GetById(Guid id)
     {
         var result = await _service.GetById(id);
@@ -55,6 +57,7 @@ public class JobPostingController : BaseController
     // ADMIN: CREATE
     // =============================================
     [HttpPost]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminCareers)]
     public async Task<ActionResult<Response<JobPostingDTO>>> Create(
         [FromBody] CreateJobPostingDTO request)
     {
@@ -81,6 +84,7 @@ public class JobPostingController : BaseController
     // ADMIN: UPDATE
     // =============================================
     [HttpPut("{id}")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminCareers)]
     public async Task<ActionResult<Response<JobPostingDTO>>> Update(
         Guid id,
         [FromBody] UpdateJobPostingDTO request)
@@ -108,6 +112,7 @@ public class JobPostingController : BaseController
     // ADMIN: DELETE
     // =============================================
     [HttpDelete("{id}")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminCareers)]
     public async Task<ActionResult<Response<bool>>> Delete(Guid id)
     {
         var result = await _service.Delete(id);
@@ -118,6 +123,7 @@ public class JobPostingController : BaseController
     // ADMIN: CLOSE
     // =============================================
     [HttpPatch("{id}/close")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminCareers)]
     public async Task<ActionResult<Response<JobPostingDTO>>> Close(Guid id)
     {
         var result = await _service.Close(id);
@@ -128,6 +134,7 @@ public class JobPostingController : BaseController
     // ADMIN: REOPEN
     // =============================================
     [HttpPatch("{id}/reopen")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminCareers)]
     public async Task<ActionResult<Response<JobPostingDTO>>> Reopen(Guid id)
     {
         var result = await _service.Reopen(id);
@@ -169,6 +176,7 @@ public class JobPostingController : BaseController
     // ADMIN: GET APPLICATIONS FOR A JOB
     // =============================================
     [HttpGet("{jobId}/applications")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminCareers)]
     public async Task<ActionResult<Response<List<JobApplicationDTO>>>> GetApplicationsByJob(
         Guid jobId)
     {
@@ -180,6 +188,7 @@ public class JobPostingController : BaseController
     // ADMIN: GET APPLICATION BY ID
     // =============================================
     [HttpGet("applications/{applicationId}")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminCareers)]
     public async Task<ActionResult<Response<JobApplicationDTO>>> GetApplicationById(
         Guid applicationId)
     {
@@ -191,6 +200,7 @@ public class JobPostingController : BaseController
     // ADMIN: UPDATE APPLICATION STATUS / NOTES
     // =============================================
     [HttpPatch("applications/{applicationId}/status")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminCareers)]
     public async Task<ActionResult<Response<JobApplicationDTO>>> UpdateApplicationStatus(
         Guid applicationId,
         [FromBody] UpdateJobApplicationStatusDTO request)
@@ -207,6 +217,7 @@ public class JobPostingController : BaseController
     // ADMIN: DELETE APPLICATION
     // =============================================
     [HttpDelete("applications/{applicationId}")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminCareers)]
     public async Task<ActionResult<Response<bool>>> DeleteApplication(Guid applicationId)
     {
         var result = await _service.DeleteApplication(applicationId);

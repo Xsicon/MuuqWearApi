@@ -1,5 +1,8 @@
 ﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.IdentityModel.Tokens;
+using MuuqWear.API.Authorization;
 using MuuqWear.API.Interfaces;
 using MuuqWear.API.Service;
 using MuuqWear.Application.Interfaces;
@@ -29,6 +32,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<SupabaseClientFactory>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<ICartService, CartService>();
@@ -40,6 +44,7 @@ builder.Services.AddScoped<IContentService, ContentService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IOrderReturnService, OrderReturnService>();
 builder.Services.AddScoped<IAdminSettingService, AdminSettingService>();
+builder.Services.AddScoped<IAdminSystemService, AdminSystemService>();
 builder.Services.AddSingleton<SupabaseAdminClientFactory>();
 builder.Services.AddScoped<IVoteService, VoteService>();
 builder.Services.AddScoped<IHelpCenterService, HelpService>();
@@ -56,7 +61,8 @@ builder.Services.AddControllers();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddAuthorization();
+builder.Services.AddAdminAuthorizationPolicies();
+builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, ForbiddenJsonAuthorizationMiddlewareResultHandler>();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
@@ -120,7 +126,7 @@ builder.Services
             ValidateIssuer = false,
             ValidateAudience = false,
             ValidateLifetime = true,
-            RoleClaimType = "app_role"
+            RoleClaimType = AdminRoleClaims.RoleClaimType
         };
         options.RequireHttpsMetadata = false;
         options.Events = new JwtBearerEvents

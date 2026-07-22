@@ -4,6 +4,7 @@ using Microsoft.IdentityModel.Tokens;
 using MuuqWear.API.DTO;
 using MuuqWear.API.Interfaces;
 using MuuqWear.API.Shared;
+using MuuqWear.Application.Shared;
 using MuuqWear.Model.Models.Profiles;
 using Supabase.Gotrue;
 using System.Net.Http.Json;
@@ -16,11 +17,16 @@ public class AuthService : IAuthService
 {
     private readonly Supabase.Client _client;
     private readonly IConfiguration _configuration;
+    private readonly IJwtTokenService _jwtTokenService;
 
-    public AuthService(SupabaseClientFactory factory, IConfiguration configuration)
+    public AuthService(
+        SupabaseClientFactory factory,
+        IConfiguration configuration,
+        IJwtTokenService jwtTokenService)
     {
         _client = factory.CreateClient();
         _configuration = configuration;
+        _jwtTokenService = jwtTokenService;
     }
 
     public async Task<Response<int>> Register(RegisterRequestDTO request)
@@ -88,14 +94,19 @@ public class AuthService : IAuthService
     .From<Profiles>()
     .Filter("id", Supabase.Postgrest.Constants.Operator.Equals, session.User!.Id!)
     .Single();
+            var role = profile?.Role ?? "user";
             var authData = new AuthResponseDTO
             {
-                AccessToken = session.AccessToken!,
+                AccessToken = _jwtTokenService.CreateAccessToken(
+                    Guid.Parse(session.User!.Id!),
+                    session.User.Email ?? "",
+                    role,
+                    fullName),
                 RefreshToken = session.RefreshToken!,
                 Email = session.User?.Email ?? "",
                 UserId = session.User?.Id ?? "",
                 UserName = fullName,
-                Role = profile?.Role!
+                Role = role
             };
 
             // fetch role separately — don't let it break OTP flow
@@ -137,14 +148,19 @@ public class AuthService : IAuthService
                 return Response<AuthResponseDTO>.Fail(
                     "This account has been deleted. Please contact support.");
 
+            var role = profile?.Role ?? "user";
             var authData = new AuthResponseDTO
             {
-                AccessToken = session.AccessToken!,
+                AccessToken = _jwtTokenService.CreateAccessToken(
+                    userId,
+                    session.User.Email ?? "",
+                    role,
+                    profile?.FullName),
                 RefreshToken = session.RefreshToken!,
                 Email = session.User.Email ?? "",
                 UserId = session.User.Id ?? "",
                 UserName = profile?.FullName ?? "",
-                Role = profile?.Role ?? "user"
+                Role = role
             };
 
             return Response<AuthResponseDTO>.SuccessResponse(authData, "Login Successful");
@@ -254,17 +270,22 @@ public class AuthService : IAuthService
                 await _client.From<Profiles>().Insert(profile);
             }
 
+            var role = profile?.Role ?? "user";
             var authData = new AuthResponseDTO
             {
-                AccessToken = accessToken,
+                AccessToken = _jwtTokenService.CreateAccessToken(
+                    Guid.Parse(session.User.Id!),
+                    session.User.Email ?? "",
+                    role,
+                    profile?.FullName),
                 RefreshToken = refreshToken,
                 Email = session.User.Email ?? "",
                 UserId = session.User.Id ?? "",
-                UserName = session.User.UserMetadata
-                    .ContainsKey("full_name")
+                UserName = profile?.FullName
+                    ?? (session.User.UserMetadata.ContainsKey("full_name")
                         ? session.User.UserMetadata["full_name"]?.ToString() ?? ""
-                        : "",
-                Role = profile?.Role ?? "user"
+                        : ""),
+                Role = role
             };
 
             return Response<AuthResponseDTO>.SuccessResponse(
@@ -276,17 +297,18 @@ public class AuthService : IAuthService
         }
     }
 
-    public async Task<Response<string>> GetGoogleSignInUrl()
+    public async Task<Response<string>> GetGoogleSignInUrl(string? redirectTo = null)
     {
         try
         {
+            var callbackUrl = ResolveGoogleCallbackUrl(redirectTo);
+
             // SignIn returns ProviderAuthState which contains the URL
             var state = await _client.Auth.SignIn(
                 Supabase.Gotrue.Constants.Provider.Google,
                 new Supabase.Gotrue.SignInOptions
                 {
-                    RedirectTo = _configuration["Auth:GoogleCallbackUrl"]
-                        ?? "http://localhost:5276/auth/google-callback"
+                    RedirectTo = callbackUrl
                 });
 
             // Uri property contains the Google OAuth URL 
@@ -301,6 +323,44 @@ public class AuthService : IAuthService
         {
             return Response<string>.Fail("Error: " + ex.Message);
         }
+    }
+
+    private string ResolveGoogleCallbackUrl(string? redirectTo)
+    {
+        const string callbackPath = "/auth/google-callback";
+        var fallback = _configuration["Auth:GoogleCallbackUrl"]
+                       ?? $"http://localhost:5276{callbackPath}";
+
+        if (string.IsNullOrWhiteSpace(redirectTo)
+            || !Uri.TryCreate(redirectTo.Trim(), UriKind.Absolute, out var requested))
+            return fallback;
+
+        var normalizedPath = requested.AbsolutePath.TrimEnd('/');
+        if (!normalizedPath.Equals(callbackPath, StringComparison.OrdinalIgnoreCase))
+            return fallback;
+
+        var allowedOrigins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (Uri.TryCreate(fallback, UriKind.Absolute, out var fallbackUri))
+            allowedOrigins.Add(fallbackUri.GetLeftPart(UriPartial.Authority));
+
+        var configuredOrigins = _configuration
+            .GetSection("Auth:AllowedFrontendOrigins")
+            .GetChildren()
+            .Select(c => c.Value)
+            .Where(v => !string.IsNullOrWhiteSpace(v));
+
+        foreach (var origin in configuredOrigins)
+        {
+            if (Uri.TryCreate(origin!.Trim().TrimEnd('/'), UriKind.Absolute, out var originUri))
+                allowedOrigins.Add(originUri.GetLeftPart(UriPartial.Authority));
+        }
+
+        var requestedOrigin = requested.GetLeftPart(UriPartial.Authority);
+        if (!allowedOrigins.Contains(requestedOrigin))
+            return fallback;
+
+        return $"{requestedOrigin}{callbackPath}";
     }
 
     public async Task<Response<int>> SendPasswordReset(string email)
@@ -399,31 +459,42 @@ public class AuthService : IAuthService
                 return Response<AuthResponseDTO>.Fail("Invalid or expired refresh token");
             }
             var json = await result.Content.ReadFromJsonAsync<JsonElement>();
-            var userId = json.GetProperty("user")
+            var userIdStr = json.GetProperty("user")
                         .GetProperty("id").GetString() ?? "";
+            var email = json.GetProperty("user").GetProperty("email").GetString() ?? "";
 
             //  check is_deleted after successful token refresh
-            if (!string.IsNullOrEmpty(userId) && Guid.TryParse(userId, out var userGuid))
+            Profiles? profile = null;
+            if (!string.IsNullOrEmpty(userIdStr) && Guid.TryParse(userIdStr, out var userGuid))
             {
                 var profileResponse = await _client
                     .From<Profiles>()
                     .Where(p => p.Id == userGuid)
                     .Get();
 
-                var profile = profileResponse.Models.FirstOrDefault();
-                System.Diagnostics.Debug.WriteLine($"RefreshToken check — userId: {userId}");
+                profile = profileResponse.Models.FirstOrDefault();
+                System.Diagnostics.Debug.WriteLine($"RefreshToken check — userId: {userIdStr}");
                 System.Diagnostics.Debug.WriteLine($"Profile found: {profile != null}");
                 System.Diagnostics.Debug.WriteLine($"IsDeleted: {profile?.IsDeleted}");
                 if (profile?.IsDeleted == true)
                     return Response<AuthResponseDTO>.Fail(
                         "This account has been deleted.");
             }
+
+            var role = profile?.Role ?? "user";
+            var refreshTokenValue = json.GetProperty("refresh_token").GetString()!;
             var authData = new AuthResponseDTO
             {
-                AccessToken = json.GetProperty("access_token").GetString()!,
-                RefreshToken = json.GetProperty("refresh_token").GetString()!,
-                Email = json.GetProperty("user").GetProperty("email").GetString() ?? "",
-                UserId = json.GetProperty("user").GetProperty("id").GetString() ?? "",
+                AccessToken = _jwtTokenService.CreateAccessToken(
+                    Guid.Parse(userIdStr),
+                    email,
+                    role,
+                    profile?.FullName),
+                RefreshToken = refreshTokenValue,
+                Email = email,
+                UserId = userIdStr,
+                UserName = profile?.FullName ?? "",
+                Role = role
             };
 
             return Response<AuthResponseDTO>.SuccessResponse(

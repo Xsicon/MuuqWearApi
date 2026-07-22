@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Controllers;
 using MuuqWear.Application.Interfaces;
+using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.AffiliatePerfomanceDTO;
 using MuuqWear.Model.DTO.RevenueOverTimeDTO;
 using MuuqWear.Model.DTO.TopSellingProductDTO;
@@ -11,7 +12,7 @@ namespace MuuqWear.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "admin")]
+[Authorize(Policy = AdminAuthorizationPolicies.AdminAnalytics)]
 public class AnalyticsController : BaseController
 {
     private readonly IAnalyticsService _service;

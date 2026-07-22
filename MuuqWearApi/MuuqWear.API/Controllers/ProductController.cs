@@ -1,9 +1,11 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using MuuqWear.API.DTO.ProductDTO;
 using MuuqWear.API.Interfaces;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Controllers;
+using MuuqWear.Application.Shared;
 
 namespace MuuqWear.API.Controllers;
 [Route("api/[controller]")]
@@ -18,6 +20,7 @@ public class ProductController : BaseController
     }
 
     [HttpGet("all")]
+    [AllowAnonymous]
     public async Task<ActionResult<Response<PaginatedResponse<ProductDTO>>>> GetAll(
       [FromQuery] int page = 1,
       [FromQuery] int pageSize = 10,
@@ -66,6 +69,7 @@ public class ProductController : BaseController
     }
 
     [HttpGet("home")]
+    [AllowAnonymous]
     public async Task<ActionResult<Response<HomeProductsDTO>>> GetHomeProducts()
     {
         var response = await _productService.GetHomeProducts();
@@ -77,6 +81,7 @@ public class ProductController : BaseController
 
 
     [HttpPost("add")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminProducts)]
     public async Task<ActionResult<Response<ProductDTO>>> Add(AddProductDTO request)
     {
         var response = await _productService.Add(request);
@@ -87,6 +92,7 @@ public class ProductController : BaseController
 
     [HttpPost("upload-image")]
     [Consumes("multipart/form-data")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminProducts)]
     public async Task<ActionResult<Response<string>>> UploadImage(IFormFile file)
     {
         if (file == null || file.Length == 0)
@@ -99,6 +105,7 @@ public class ProductController : BaseController
     }
 
     [HttpPut("update/{id}")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminProducts)]
     public async Task<ActionResult<Response<ProductDTO>>> Update(Guid id, UpdateProductDTO request)
     {
         var response = await _productService.Update(id, request);
@@ -108,6 +115,7 @@ public class ProductController : BaseController
     }
 
     [HttpDelete("delete/{id}")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminProducts)]
     public async Task<ActionResult<Response<bool>>> Delete(Guid id)
     {
         var response = await _productService.Delete(id);
@@ -117,6 +125,7 @@ public class ProductController : BaseController
     }
 
     [HttpGet("{id}")]
+    [AllowAnonymous]
     public async Task<ActionResult<Response<ProductDTO>>> GetById(Guid id)
     {
         // validate id is not empty Guid
@@ -133,6 +142,7 @@ public class ProductController : BaseController
     }
 
     [HttpGet("{id}/related")]
+    [AllowAnonymous]
     public async Task<ActionResult<Response<List<ProductDTO>>>> GetRelated(Guid id)
     {
         // validate id
@@ -152,6 +162,7 @@ public class ProductController : BaseController
     }
 
     [HttpPost("images/add")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminProducts)]
     public async Task<ActionResult<Response<ProductImageDTO>>> AddProductImage(AddProductImageDTO request)
     {
         if (request.ProductId == Guid.Empty)
@@ -167,6 +178,7 @@ public class ProductController : BaseController
     }
 
     [HttpDelete("images/{imageId}")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminProducts)]
     public async Task<ActionResult<Response<bool>>> DeleteProductImage(Guid imageId)
     {
         if (imageId == Guid.Empty)
@@ -180,6 +192,7 @@ public class ProductController : BaseController
 
     // ─── GET SIZE STOCK ───────────────────────────────────────────
     [HttpGet("{productId}/size-stock")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminProducts)]
     public async Task<ActionResult<Response<List<SizeStockDTO>>>> GetSizeStock(
         Guid productId)
     {
@@ -190,6 +203,7 @@ public class ProductController : BaseController
 
     // ─── UPDATE SIZE STOCK ────────────────────────────────────────
     [HttpPatch("size-stock/{sizeStockId}")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminProducts)]
     public async Task<ActionResult<Response<SizeStockDTO>>> UpdateSizeStock(
         Guid sizeStockId,
         [FromBody] UpdateSizeStockDTO request)
@@ -201,6 +215,7 @@ public class ProductController : BaseController
     }
 
     [HttpPost("{productId}/size-stock")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminProducts)]
     public async Task<ActionResult<Response<SizeStockDTO>>> AddSizeStock(
      Guid productId,
      [FromBody] AddSizeStockDTO request)
@@ -213,6 +228,7 @@ public class ProductController : BaseController
 
     // ─── DELETE SIZE STOCK ────────────────────────────────────────
     [HttpDelete("size-stock/{sizeStockId}")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminProducts)]
     public async Task<ActionResult<Response<bool>>> DeleteSizeStock(Guid sizeStockId)
     {
         var result = await _productService.DeleteSizeStock(sizeStockId);

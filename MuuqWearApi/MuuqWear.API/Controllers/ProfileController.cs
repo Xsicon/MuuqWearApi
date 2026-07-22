@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using MuuqWear.API.DTO;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
+using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.ProfileDTO;
 using Supabase.Gotrue;
 using System;
@@ -111,7 +112,7 @@ public class ProfileController : BaseController
         return Ok();
     }
     [HttpPost("notifications-read")]
-    [Authorize]
+    [Authorize(Policy = AdminAuthorizationPolicies.StaffPortal)]
     public async Task<IActionResult> MarkNotificationsRead()
     {
         var userId = GetUserId();

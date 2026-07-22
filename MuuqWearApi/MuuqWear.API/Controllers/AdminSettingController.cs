@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
+using MuuqWear.Application.Shared;
 using MuuqWear.Application.Service;
 using MuuqWear.Model.DTO.AdminSettingsUserDTO;
 
@@ -9,7 +10,7 @@ namespace MuuqWear.Application.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "admin")] //  all endpoints admin only
+[Authorize(Policy = AdminAuthorizationPolicies.AdminOnly)]
 public class AdminSettingController : BaseController
 {
     private readonly IAdminSettingService _adminSettingService;

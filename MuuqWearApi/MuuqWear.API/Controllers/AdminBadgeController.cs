@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Controllers;
 using MuuqWear.Application.Interfaces;
+using MuuqWear.Application.Shared;
 using MuuqWear.Application.Service;
 using MuuqWear.Model.DTO.AdminBadgeCount;
 
@@ -10,7 +11,7 @@ namespace MuuqWear.API.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]
-[Authorize(Roles = "admin")]
+[Authorize(Policy = AdminAuthorizationPolicies.StaffPortal)]
 public class AdminBadgeController : BaseController
 {
     private readonly IAdminBadgeService _adminBadgeService;

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
+using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.CartDTO;
 using MuuqWear.Model.DTO.ContentItemDTO;
 using System;
@@ -10,7 +11,7 @@ using System;
 namespace MuuqWear.Application.Controllers;
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "admin")]
+[Authorize(Policy = AdminAuthorizationPolicies.AdminContent)]
 public class ContentController : BaseController
 {
     private readonly IContentService _contentService;

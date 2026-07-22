@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
+using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.OrdeReturnDTO;
 
 namespace MuuqWear.Application.Controllers;
@@ -57,7 +58,7 @@ public class ReturnController : BaseController
     // GET api/Return/admin?status=&page=&pageSize=
     // =============================================
     [HttpGet("admin")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminOrders)]
     public async Task<ActionResult<Response<PaginatedResponse<OrderReturnDTO>>>> GetAllReturns(
         [FromQuery] string? status = null,
         [FromQuery] int page = 1,
@@ -78,7 +79,7 @@ public class ReturnController : BaseController
     // PATCH api/Return/admin/{returnId}/status
     // =============================================
     [HttpPatch("admin/{returnId}/status")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminOrders)]
     public async Task<ActionResult<Response<OrderReturnDTO>>> UpdateReturnStatus(
         Guid returnId,
         [FromBody] UpdateReturnStatusDTO request)

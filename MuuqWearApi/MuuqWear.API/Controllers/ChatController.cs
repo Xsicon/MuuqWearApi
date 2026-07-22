@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Controllers;
 using MuuqWear.Application.Interfaces;
+using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.Chat;
 using MuuqWear.Model.Models.Chat;
 
@@ -46,7 +47,7 @@ public class ChatController : BaseController
             return BadRequest(Response<ChatMessageDTO>.Fail("Guest email is required"));
         }
 
-        var isAdmin = User.IsInRole("admin");
+        var isAdmin = AdminRoleClaims.CanActAsChatAdmin(User);
 
         var result = await _chatService.SendMessage(request, userId, isAdmin);
         return HandleResponse(result);
@@ -62,7 +63,7 @@ public class ChatController : BaseController
         if (User.Identity?.IsAuthenticated == true)
             userId = GetUserId();
 
-        var isAdmin = User.IsInRole("admin");
+        var isAdmin = AdminRoleClaims.CanActAsChatAdmin(User);
 
         var result = await _chatService.GetMessages(sessionId, userId, isAdmin);
         if (!result.Success
@@ -75,7 +76,7 @@ public class ChatController : BaseController
     /// Get active sessions for the admin dashboard.
     /// </summary>
     [HttpGet("active-sessions")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminSupport)]
     public async Task<ActionResult<Response<List<ChatSessionDTO>>>> GetActiveSessions()
     {
         var result = await _chatService.GetActiveSessions();
@@ -86,7 +87,7 @@ public class ChatController : BaseController
     /// Close a session (admin only).
     /// </summary>
     [HttpPost("close/{sessionId}")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminSupport)]
     public async Task<ActionResult<Response<bool>>> CloseSession(Guid sessionId)
     {
         var result = await _chatService.CloseSession(sessionId);
@@ -103,7 +104,7 @@ public class ChatController : BaseController
         if (User.Identity?.IsAuthenticated == true)
             userId = GetUserId();
 
-        var isAdmin = User.IsInRole("admin");
+        var isAdmin = AdminRoleClaims.CanActAsChatAdmin(User);
 
         var result = await _chatService.GetSessionStatus(sessionId, userId, isAdmin);
         if (!result.Success
@@ -117,7 +118,7 @@ public class ChatController : BaseController
     /// Includes customerEmail for admin UX.
     /// </summary>
     [HttpGet("session/{sessionId}")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminSupport)]
     public async Task<ActionResult<Response<ChatSessionDTO>>> GetSession(Guid sessionId)
     {
         var result = await _chatService.GetSession(sessionId);

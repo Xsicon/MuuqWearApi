@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
+using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.AffiliateApplicationDTO;
 using MuuqWear.Model.DTO.PartnerStoreProductDTO;
 using MuuqWear.Model.Models.Profiles;
@@ -91,7 +92,7 @@ public class AffiliateController : BaseController
     /// </summary>
     /// <param name="status">Optional status filter: pending, approved, rejected, waitlisted</param>
     [HttpGet("admin/applications")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminAffiliates)]
     public async Task<ActionResult<Response<List<AffiliateApplicationDTO>>>> GetAllApplications(
         [FromQuery] string? status = null)
     {
@@ -112,7 +113,7 @@ public class AffiliateController : BaseController
     /// Update application status (Admin only)
     /// </summary>
     [HttpPut("admin/applications/{applicationId}/status")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminAffiliates)]
     public async Task<ActionResult<Response<AffiliateApplicationDTO>>> UpdateApplicationStatus(
         Guid applicationId,
         [FromBody] UpdateApplicationStatusDTO request)
@@ -141,7 +142,7 @@ public class AffiliateController : BaseController
     /// Get count of pending applications (Admin only)
     /// </summary>
     [HttpGet("admin/pending-count")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminAffiliates)]
     public async Task<ActionResult<Response<int>>> GetPendingCount()
     {
         var result = await _affiliateService.GetPendingCount();
@@ -149,7 +150,7 @@ public class AffiliateController : BaseController
     }
 
     [HttpGet("admin/tiers")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminAffiliates)]
     public async Task<ActionResult<Response<List<AffiliateTierDTO>>>> GetAdminTiers()
     {
         var result = await _affiliateService.GetAdminTiers();
@@ -157,7 +158,7 @@ public class AffiliateController : BaseController
     }
 
     [HttpGet("admin/stats")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminAffiliates)]
     public async Task<ActionResult<Response<AffiliateAdminStatsDTO>>> GetAdminStats()
     {
         var result = await _affiliateService.GetAdminStats();
@@ -165,7 +166,7 @@ public class AffiliateController : BaseController
     }
 
     [HttpPut("admin/affiliates/{userId}/status")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminAffiliates)]
     public async Task<ActionResult<Response<AffiliateApplicationDTO>>> SetAffiliateActiveStatus(
         Guid userId,
         [FromBody] UpdateAffiliateActiveStatusDTO request)
@@ -184,7 +185,7 @@ public class AffiliateController : BaseController
     }
 
     [HttpGet("admin/payouts")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminAffiliates)]
     public async Task<ActionResult<Response<List<AffiliatePendingPayoutDTO>>>> GetAdminPendingPayouts()
     {
         var result = await _affiliateService.GetAdminPendingPayouts();
@@ -192,7 +193,7 @@ public class AffiliateController : BaseController
     }
 
     [HttpPost("admin/payouts/process-all")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminAffiliates)]
     public async Task<ActionResult<Response<BulkAffiliatePayoutResultDTO>>> ProcessAllAdminPayouts(
         [FromBody] BulkProcessAffiliatePayoutsDTO? request)
     {
@@ -206,7 +207,7 @@ public class AffiliateController : BaseController
     }
 
     [HttpGet("admin/payouts/history")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminAffiliates)]
     public async Task<ActionResult<Response<PaginatedResponse<AffiliatePayoutResultDTO>>>> GetAdminPayoutHistory(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
@@ -216,7 +217,7 @@ public class AffiliateController : BaseController
     }
 
     [HttpGet("admin/payouts/{affiliateCode}/referrals")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminAffiliates)]
     public async Task<ActionResult<Response<List<AffiliatePendingReferralDTO>>>> GetAdminPendingReferrals(
         string affiliateCode)
     {
@@ -231,7 +232,7 @@ public class AffiliateController : BaseController
     }
 
     [HttpPost("admin/payouts/{affiliateCode}/process")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminAffiliates)]
     public async Task<ActionResult<Response<AffiliatePayoutResultDTO>>> ProcessAdminPayout(
         string affiliateCode,
         [FromBody] ProcessAffiliatePayoutDTO? request)
@@ -253,7 +254,7 @@ public class AffiliateController : BaseController
     }
 
     [HttpGet("admin/tiers/{slug}")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminAffiliates)]
     public async Task<ActionResult<Response<AffiliateTierDTO>>> GetAdminTierBySlug(string slug)
     {
         var result = await _affiliateService.GetAdminTierBySlug(slug);
@@ -267,7 +268,7 @@ public class AffiliateController : BaseController
     }
 
     [HttpPut("admin/tiers/{slug}")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminAffiliates)]
     public async Task<ActionResult<Response<AffiliateTierDTO>>> UpdateAdminTier(
         string slug,
         [FromBody] UpdateAffiliateTierDTO request)
@@ -306,7 +307,7 @@ public class AffiliateController : BaseController
     }
 
     [HttpPost("admin/approve/{applicationId}")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminAffiliates)]
     public async Task<ActionResult<Response<bool>>> ApproveApplication(Guid applicationId)
     {
         var result = await _affiliateService.ApproveApplication(applicationId);

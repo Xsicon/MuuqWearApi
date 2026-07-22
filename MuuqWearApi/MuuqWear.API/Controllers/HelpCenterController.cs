@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
+using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.HelpCenterDTO;
 
 namespace MuuqWear.Application.Controllers;
@@ -57,7 +58,7 @@ public class HelpController : BaseController
     //  admin only
     // =============================================
     [HttpGet("admin/tickets")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminSupport)]
     public async Task<ActionResult<Response<PaginatedResponse<SupportTicketDTO>>>> GetAllTickets(
         [FromQuery] string? status = null,
         [FromQuery] int page = 1,
@@ -79,7 +80,7 @@ public class HelpController : BaseController
     //  admin only
     // =============================================
     [HttpGet("admin/tickets/{ticketId}")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminSupport)]
     public async Task<ActionResult<Response<SupportTicketDTO>>> GetTicketById(
         Guid ticketId)
     {
@@ -98,7 +99,7 @@ public class HelpController : BaseController
     //  admin only
     // =============================================
     [HttpPatch("admin/tickets/{ticketId}/status")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminSupport)]
     public async Task<ActionResult<Response<SupportTicketDTO>>> UpdateTicketStatus(
         Guid ticketId,
         [FromBody] UpdateTicketStatusDTO request)
@@ -124,7 +125,7 @@ public class HelpController : BaseController
     //  admin only
     // =============================================
     [HttpGet("admin/stats")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminSupport)]
     public async Task<ActionResult<Response<TicketStatsDTO>>> GetStats()
     {
         var response = await _helpService.GetStats();
