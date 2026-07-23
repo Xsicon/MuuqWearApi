@@ -1,8 +1,10 @@
 ﻿using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
+using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.Chat;
 using MuuqWear.Model.Models.Profiles;
 using MuuqWear.Model.Models.Chat;
+using Microsoft.Extensions.Logging;
 using Supabase;
 
 namespace MuuqWear.Application.Service;
@@ -10,10 +12,15 @@ namespace MuuqWear.Application.Service;
 public class ChatService : IChatService
 {
     private readonly Client _client;
+    private readonly ILogger<ChatService> _logger;
 
-    public ChatService(SupabaseClientFactory factory)
+    public ChatService(SupabaseAdminClientFactory factory, ILogger<ChatService> logger)
     {
+        // Chat auth/ownership is enforced here + ChatController.
+        // Do not use SupabaseClientFactory — it forwards the app JWT to PostgREST,
+        // which is not a Supabase Auth token and causes RLS to hide chat_messages.
         _client = factory.CreateClient();
+        _logger = logger;
     }
 
     // =============================================
@@ -43,7 +50,6 @@ public class ChatService : IChatService
             {
                 sessionId = request.SessionId.Value;
 
-                // Enforce ownership for authenticated customers.
                 if (!isAdmin)
                 {
                     var existing = await _client.From<ChatSession>()
@@ -55,17 +61,13 @@ public class ChatService : IChatService
                     if (existingSession == null)
                         return Response<ChatMessageDTO>.Fail("Session not found");
 
-                    var isOwner = userId.HasValue
-                        ? existingSession.UserId == userId.Value
-                        : existingSession.UserId == null;
-
-                    if (!isOwner)
+                    if (!ChatSessionAccess.CanAccessSession(
+                            isAdmin, existingSession.UserId, userId))
                         return Response<ChatMessageDTO>.Fail("Forbidden");
                 }
             }
             else
             {
-                // First message — only a customer can open a session
                 if (isAdmin)
                     return Response<ChatMessageDTO>.Fail("Admins cannot create new sessions");
 
@@ -73,7 +75,6 @@ public class ChatService : IChatService
                 {
                     Id = Guid.NewGuid(),
                     UserId = userId,
-                    // For authenticated users, persist name/email so admin inbox can always render customerEmail.
                     GuestName = senderProfile?.FullName ?? request.GuestName,
                     GuestEmail = senderProfile?.Email ?? request.GuestEmail,
                     Status = "active",
@@ -81,8 +82,8 @@ public class ChatService : IChatService
                     UpdatedAt = DateTime.UtcNow
                 };
 
-                var created = await _client.From<ChatSession>().Insert(newSession);
-                sessionId = created.Models.First().Id;
+                var sessionInsert = await _client.From<ChatSession>().Insert(newSession);
+                sessionId = sessionInsert.Models.First().Id;
             }
 
             // STEP 2: Determine sender display
@@ -104,7 +105,8 @@ public class ChatService : IChatService
                 IsRead = false
             };
 
-            await _client.From<ChatMessage>().Insert(message);
+            var messageInsert = await _client.From<ChatMessage>().Insert(message);
+            var saved = messageInsert.Models.FirstOrDefault() ?? message;
 
             // STEP 4: Touch the session so it sorts to top of admin list
             var session = await _client.From<ChatSession>()
@@ -116,24 +118,23 @@ public class ChatService : IChatService
                 await _client.From<ChatSession>().Update(session);
             }
 
-            // STEP 5: Return DTO (polling delivers it to the other side)
             var dto = new ChatMessageDTO
             {
-                Id = message.Id,
-                SessionId = message.SessionId,
-                SenderType = message.SenderType,
-                SenderName = message.SenderName ?? senderName,
-                Message = message.Message,
-                CreatedAt = message.CreatedAt,
-                IsRead = message.IsRead
+                Id = saved.Id,
+                SessionId = saved.SessionId,
+                SenderType = saved.SenderType,
+                SenderName = saved.SenderName ?? senderName,
+                Message = saved.Message,
+                CreatedAt = saved.CreatedAt,
+                IsRead = saved.IsRead
             };
 
             return Response<ChatMessageDTO>.SuccessResponse(dto, "Message sent");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Chat] SendMessage error: {ex.Message}");
-            return Response<ChatMessageDTO>.Fail($"Error: {ex.Message}");
+            _logger.LogError(ex, "SendMessage failed");
+            return Response<ChatMessageDTO>.Fail("Unable to send message.");
         }
     }
 
@@ -145,7 +146,6 @@ public class ChatService : IChatService
     {
         try
         {
-            // Ownership enforcement (authenticated customers only).
             if (!isAdmin)
             {
                 var sessionResult = await _client.From<ChatSession>()
@@ -157,11 +157,7 @@ public class ChatService : IChatService
                 if (session == null)
                     return Response<List<ChatMessageDTO>>.Fail("Session not found");
 
-                var isOwner = userId.HasValue
-                    ? session.UserId == userId.Value
-                    : session.UserId == null;
-
-                if (!isOwner)
+                if (!ChatSessionAccess.CanAccessSession(isAdmin, session.UserId, userId))
                     return Response<List<ChatMessageDTO>>.Fail("Forbidden");
             }
 
@@ -185,8 +181,8 @@ public class ChatService : IChatService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Chat] GetMessages error: {ex.Message}");
-            return Response<List<ChatMessageDTO>>.Fail($"Error: {ex.Message}");
+            _logger.LogError(ex, "GetMessages failed for session {SessionId}", sessionId);
+            return Response<List<ChatMessageDTO>>.Fail("Unable to load messages.");
         }
     }
 
@@ -205,7 +201,6 @@ public class ChatService : IChatService
             var sessionsList = sessions.Models ?? new List<ChatSession>();
             var dtos = new List<ChatSessionDTO>();
 
-            // Resolve emails/names for logged-in users in one query.
             var userIds = sessionsList
                 .Where(s => s.UserId.HasValue)
                 .Select(s => s.UserId!.Value)
@@ -227,15 +222,17 @@ public class ChatService : IChatService
                     .ToDictionary(p => p.Id!.Value, p => p);
             }
 
+            var lastMessageBySession = await ChatMessageQueryHelper.LoadLatestMessagesBySessionAsync(
+                _client,
+                sessionsList.Select(s => s.Id).ToList());
+            var messageStatsBySession = await ChatMessageQueryHelper.LoadMessageStatsBySessionAsync(
+                _client,
+                sessionsList.Select(s => s.Id).ToList());
+
             foreach (var session in sessionsList)
             {
-                var lastMsgResult = await _client.From<ChatMessage>()
-                    .Where(m => m.SessionId == session.Id)
-                    .Order("created_at", Supabase.Postgrest.Constants.Ordering.Descending)
-                    .Limit(1)
-                    .Get();
-
-                var lastMsg = lastMsgResult.Models.FirstOrDefault();
+                lastMessageBySession.TryGetValue(session.Id, out var lastMsg);
+                messageStatsBySession.TryGetValue(session.Id, out var stats);
 
                 Profiles? profile = null;
                 if (session.UserId.HasValue)
@@ -256,10 +253,10 @@ public class ChatService : IChatService
                     CustomerEmail = customerEmail,
                     Status = session.Status,
                     LastActivity = session.UpdatedAt,
-                    LastMessagePreview = lastMsg?.Message.Length > 50
-                        ? lastMsg.Message.Substring(0, 50) + "..."
-                        : lastMsg?.Message,
+                    LastMessagePreview = TruncatePreview(lastMsg?.Message),
                     LastMessageSender = lastMsg?.SenderType,
+                    MessageCount = stats?.Total ?? 0,
+                    UnreadMessageCount = stats?.Unread ?? 0,
                     CreatedAt = session.CreatedAt
                 });
             }
@@ -270,8 +267,8 @@ public class ChatService : IChatService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Chat] GetActiveSessions error: {ex.Message}");
-            return Response<List<ChatSessionDTO>>.Fail($"Error: {ex.Message}");
+            _logger.LogError(ex, "GetActiveSessions failed");
+            return Response<List<ChatSessionDTO>>.Fail("Unable to load active sessions.");
         }
     }
 
@@ -298,8 +295,8 @@ public class ChatService : IChatService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Chat] CloseSession error: {ex.Message}");
-            return Response<bool>.Fail($"Error: {ex.Message}");
+            _logger.LogError(ex, "CloseSession failed for session {SessionId}", sessionId);
+            return Response<bool>.Fail("Unable to close session.");
         }
     }
 
@@ -308,37 +305,24 @@ public class ChatService : IChatService
     {
         try
         {
-            if (!isAdmin)
-            {
-                var sessionResult = await _client.From<ChatSession>()
-                    .Where(s => s.Id == sessionId)
-                    .Limit(1)
-                    .Get();
+            var sessionResult = await _client.From<ChatSession>()
+                .Where(s => s.Id == sessionId)
+                .Limit(1)
+                .Get();
 
-                var existingSession = sessionResult.Models.FirstOrDefault();
-                if (existingSession == null)
-                    return Response<string>.Fail("Session not found");
-
-                var isOwner = userId.HasValue
-                    ? existingSession.UserId == userId.Value
-                    : existingSession.UserId == null;
-
-                if (!isOwner)
-                    return Response<string>.Fail("Forbidden");
-            }
-
-            var session = await _client.From<ChatSession>()
-                .Where(s => s.Id == sessionId).Single();
-
+            var session = sessionResult.Models.FirstOrDefault();
             if (session == null)
                 return Response<string>.Fail("Session not found");
+
+            if (!ChatSessionAccess.CanAccessSession(isAdmin, session.UserId, userId))
+                return Response<string>.Fail("Forbidden");
 
             return Response<string>.SuccessResponse(session.Status, "Status fetched");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Chat] GetSessionStatus error: {ex.Message}");
-            return Response<string>.Fail($"Error: {ex.Message}");
+            _logger.LogError(ex, "GetSessionStatus failed for session {SessionId}", sessionId);
+            return Response<string>.Fail("Unable to load session status.");
         }
     }
 
@@ -369,13 +353,10 @@ public class ChatService : IChatService
                 profile = profileResult.Models.FirstOrDefault();
             }
 
-            var lastMsgResult = await _client.From<ChatMessage>()
-                .Where(m => m.SessionId == session.Id)
-                .Order("created_at", Supabase.Postgrest.Constants.Ordering.Descending)
-                .Limit(1)
-                .Get();
-
-            var lastMsg = lastMsgResult.Models.FirstOrDefault();
+            var lastMsg = (await ChatMessageQueryHelper.LoadLatestMessagesBySessionAsync(_client, [session.Id]))
+                .GetValueOrDefault(session.Id);
+            var messageStats = (await ChatMessageQueryHelper.LoadMessageStatsBySessionAsync(_client, [session.Id]))
+                .GetValueOrDefault(session.Id);
 
             var customerName = profile != null
                 ? (profile.FullName ?? "Logged-in User")
@@ -392,10 +373,10 @@ public class ChatService : IChatService
                 CustomerEmail = customerEmail,
                 Status = session.Status,
                 LastActivity = session.UpdatedAt,
-                LastMessagePreview = lastMsg?.Message.Length > 50
-                    ? lastMsg.Message.Substring(0, 50) + "..."
-                    : lastMsg?.Message,
+                LastMessagePreview = TruncatePreview(lastMsg?.Message),
                 LastMessageSender = lastMsg?.SenderType,
+                MessageCount = messageStats?.Total ?? 0,
+                UnreadMessageCount = messageStats?.Unread ?? 0,
                 CreatedAt = session.CreatedAt
             };
 
@@ -403,8 +384,18 @@ public class ChatService : IChatService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Chat] GetSession error: {ex.Message}");
-            return Response<ChatSessionDTO>.Fail($"Error: {ex.Message}");
+            _logger.LogError(ex, "GetSession failed for session {SessionId}", sessionId);
+            return Response<ChatSessionDTO>.Fail("Unable to load session.");
         }
+    }
+
+    private static string? TruncatePreview(string? message)
+    {
+        if (string.IsNullOrEmpty(message))
+            return message;
+
+        return message.Length > 50
+            ? message[..50] + "..."
+            : message;
     }
 }

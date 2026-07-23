@@ -9,5 +9,7 @@ public class ChatSessionDTO
     public DateTime LastActivity { get; set; }
     public string? LastMessagePreview { get; set; }
     public string? LastMessageSender { get; set; }
+    public int MessageCount { get; set; }
+    public int UnreadMessageCount { get; set; }
     public DateTime CreatedAt { get; set; }
 }

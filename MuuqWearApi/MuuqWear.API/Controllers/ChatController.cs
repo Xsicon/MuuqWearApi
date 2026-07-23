@@ -6,7 +6,7 @@ using MuuqWear.Application.Interfaces;
 using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.Chat;
 using MuuqWear.Model.Models.Chat;
-
+using System.Security.Claims;
 namespace MuuqWear.API.Controllers;
 
 [ApiController]
@@ -20,9 +20,13 @@ public class ChatController : BaseController
         _chatService = chatService;
     }
 
+    private static bool IsChatAdmin(ClaimsPrincipal user) =>
+        AdminRoleClaims.CanActAsChatAdmin(user);
+
     /// <summary>
     /// Send a message (customer or admin). First message creates the session.
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("send")]
     public async Task<ActionResult<Response<ChatMessageDTO>>> SendMessage(
         [FromBody] SendMessageRequest request)
@@ -30,16 +34,11 @@ public class ChatController : BaseController
         if (string.IsNullOrWhiteSpace(request.Message))
             return BadRequest(Response<ChatMessageDTO>.Fail("Message cannot be empty"));
 
-        // Resolve user (null = guest)
-        Guid? userId = null;
-        if (User.Identity?.IsAuthenticated == true)
-            userId = GetUserId();
+        Guid? userId = ResolveOptionalUserId();
 
-        // Guest must supply a name
         if (!userId.HasValue && string.IsNullOrWhiteSpace(request.GuestName))
             return BadRequest(Response<ChatMessageDTO>.Fail("Guest name is required"));
 
-        // Guest must supply an email for the first message that creates a session.
         if (!userId.HasValue
             && !request.SessionId.HasValue
             && string.IsNullOrWhiteSpace(request.GuestEmail))
@@ -47,31 +46,33 @@ public class ChatController : BaseController
             return BadRequest(Response<ChatMessageDTO>.Fail("Guest email is required"));
         }
 
-        var isAdmin = AdminRoleClaims.CanActAsChatAdmin(User);
+        var isAdmin = User.Identity?.IsAuthenticated == true && IsChatAdmin(User);
 
         var result = await _chatService.SendMessage(request, userId, isAdmin);
+        if (!result.Success
+            && result.Message.Contains("Forbidden", StringComparison.OrdinalIgnoreCase))
+            return StatusCode(403, result);
+
         return HandleResponse(result);
     }
 
     /// <summary>
     /// Get all messages for a session (history + polling).
     /// </summary>
+    [AllowAnonymous]
     [HttpGet("messages/{sessionId}")]
     public async Task<ActionResult<Response<List<ChatMessageDTO>>>> GetMessages(Guid sessionId)
     {
-        Guid? userId = null;
-        if (User.Identity?.IsAuthenticated == true)
-            userId = GetUserId();
-
-        var isAdmin = AdminRoleClaims.CanActAsChatAdmin(User);
+        var userId = ResolveOptionalUserId();
+        var isAdmin = User.Identity?.IsAuthenticated == true && IsChatAdmin(User);
 
         var result = await _chatService.GetMessages(sessionId, userId, isAdmin);
         if (!result.Success
             && result.Message.Contains("Forbidden", StringComparison.OrdinalIgnoreCase))
             return StatusCode(403, result);
+
         return HandleResponse(result);
     }
-
     /// <summary>
     /// Get active sessions for the admin dashboard.
     /// </summary>
@@ -97,22 +98,20 @@ public class ChatController : BaseController
     /// <summary>
     /// Get a session's current status (used by the customer to detect closure).
     /// </summary>
+    [AllowAnonymous]
     [HttpGet("session/{sessionId}/status")]
     public async Task<ActionResult<Response<string>>> GetSessionStatus(Guid sessionId)
     {
-        Guid? userId = null;
-        if (User.Identity?.IsAuthenticated == true)
-            userId = GetUserId();
-
-        var isAdmin = AdminRoleClaims.CanActAsChatAdmin(User);
+        var userId = ResolveOptionalUserId();
+        var isAdmin = User.Identity?.IsAuthenticated == true && IsChatAdmin(User);
 
         var result = await _chatService.GetSessionStatus(sessionId, userId, isAdmin);
         if (!result.Success
             && result.Message.Contains("Forbidden", StringComparison.OrdinalIgnoreCase))
             return StatusCode(403, result);
+
         return HandleResponse(result);
     }
-
     /// <summary>
     /// Load full session details (admin only).
     /// Includes customerEmail for admin UX.
@@ -127,5 +126,14 @@ public class ChatController : BaseController
             return NotFound(result);
 
         return HandleResponse(result);
+    }
+
+    private Guid? ResolveOptionalUserId()
+    {
+        if (User.Identity?.IsAuthenticated != true)
+            return null;
+
+        var id = GetUserId();
+        return id == Guid.Empty ? null : id;
     }
 }

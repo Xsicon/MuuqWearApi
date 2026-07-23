@@ -3,6 +3,7 @@ using MuuqWear.Application.Interfaces;
 using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.AdminBadgeCount;
 using MuuqWear.Model.Models.AffiliateApplication;
+using MuuqWear.Model.Models.Chat;
 using MuuqWear.Model.Models.Profiles;
 using Supabase;
 
@@ -26,10 +27,11 @@ public class AdminBadgeService : IAdminBadgeService
             var affiliateCounts = CountAffiliateApplications();
             var openTickets = CountOpenTickets();
             var pendingPayouts = CountPendingPayoutAffiliates();
+            var activeChats = CountWaitingChats();
 
             await Task.WhenAll(
                 pendingOrders, totalCustomers, totalProducts,
-                affiliateCounts, openTickets, pendingPayouts);
+                affiliateCounts, openTickets, pendingPayouts, activeChats);
 
             var affiliate = affiliateCounts.Result;
             affiliate.PendingPayouts = pendingPayouts.Result;
@@ -40,7 +42,8 @@ public class AdminBadgeService : IAdminBadgeService
                 TotalCustomers = totalCustomers.Result,
                 TotalProducts = totalProducts.Result,
                 AffiliateCounts = affiliate,
-                OpenTickets = openTickets.Result
+                OpenTickets = openTickets.Result,
+                ActiveChats = activeChats.Result
             };
 
             return Response<AdminBadgeCountsDTO>.SuccessResponse(
@@ -82,6 +85,32 @@ public class AdminBadgeService : IAdminBadgeService
         {
             { "p_status", "open" }
         });
+
+    private async Task<int> CountWaitingChats()
+    {
+        try
+        {
+            var sessionsResult = await _adminClient
+                .From<ChatSession>()
+                .Where(s => s.Status == "active")
+                .Get();
+
+            var sessions = sessionsResult.Models ?? new List<ChatSession>();
+            if (sessions.Count == 0)
+                return 0;
+
+            var latestMessageBySession = await ChatMessageQueryHelper.LoadLatestMessagesBySessionAsync(
+                _adminClient,
+                sessions.Select(s => s.Id).ToList());
+
+            return ChatMessageQueryHelper.CountWaitingSessions(sessions, latestMessageBySession);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[AdminBadge] CountWaitingChats error: {ex.Message}");
+            return 0;
+        }
+    }
 
     private async Task<int> CountPendingPayoutAffiliates()
     {

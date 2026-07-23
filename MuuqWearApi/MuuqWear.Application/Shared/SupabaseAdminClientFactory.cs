@@ -12,13 +12,13 @@ public class SupabaseAdminClientFactory
         _configuration = configuration;
     }
 
-    //  single responsibility — creates admin client with service role key
-    // service role key bypasses RLS → admin operations only 
-    // never use this client for user-facing operations 
-    public Supabase.Client CreateClient()
+    // Service role key bypasses RLS — admin operations only.
+    // Never forwards the caller JWT (unlike SupabaseClientFactory).
+    public Client CreateClient()
     {
         var url = _configuration["SupaBase:Url"]!;
-        var serviceRoleKey = _configuration["Supabase:ServiceRoleKey"]!;
+        var serviceRoleKey = _configuration["SupaBase:ServiceRoleKey"]
+            ?? _configuration["Supabase:ServiceRoleKey"]!;
 
         var options = new SupabaseOptions
         {
@@ -27,6 +27,6 @@ public class SupabaseAdminClientFactory
             Schema = "MuuqWear"
         };
 
-        return new Supabase.Client(url, serviceRoleKey, options);
+        return new Client(url, serviceRoleKey, options);
     }
 }
