@@ -1,17 +1,20 @@
 ﻿using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
+using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.HelpCenterDTO;
 using MuuqWear.Model.Models.SupportTicket;
 using System.Text.Json;
 
 namespace MuuqWear.Application.Service;
 
-public class HelpService : IHelpCenterService
+public partial class HelpService : IHelpCenterService
 {
     private readonly Supabase.Client _client;
 
-    public HelpService(SupabaseClientFactory factory)
+    public HelpService(SupabaseAdminClientFactory factory)
     {
+        // Auth is enforced on HelpController. Use service-role client so
+        // custom app JWTs are not forwarded to PostgREST (RLS would hide rows).
         _client = factory.CreateClient();
     }
 
@@ -23,13 +26,9 @@ public class HelpService : IHelpCenterService
     {
         try
         {
-            // Step 1 — auto-generate ticket number
             var ticketNumber = $"TKT-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
-
-            // Step 2 — auto-assign priority from category
             var priority = TicketPriority.FromCategory(request.Category);
 
-            // Step 3 — insert ticket
             var ticket = new SupportTicket
             {
                 Id = Guid.NewGuid(),
@@ -54,14 +53,33 @@ public class HelpService : IHelpCenterService
                 return Response<SupportTicketDTO>.Fail(
                     "Failed to submit ticket. Please try again.");
 
+            // Seed original customer message into the reply thread for continuity.
+            try
+            {
+                await _client.From<SupportTicketReply>().Insert(new SupportTicketReply
+                {
+                    Id = Guid.NewGuid(),
+                    TicketId = inserted.Id,
+                    SenderType = TicketSenderType.Customer,
+                    SenderId = null,
+                    SenderName = inserted.Name,
+                    Message = inserted.Message,
+                    CreatedAt = inserted.CreatedAt ?? DateTime.UtcNow
+                });
+            }
+            catch
+            {
+                // Reply table may not exist yet — ticket submit still succeeds.
+            }
+
             return Response<SupportTicketDTO>.SuccessResponse(
                 MapToDTO(inserted),
                 "Ticket submitted successfully");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return Response<SupportTicketDTO>
-                .Fail("Error: " + ex.Message);
+                .Fail("Unable to submit ticket.");
         }
     }
 
@@ -76,7 +94,6 @@ public class HelpService : IHelpCenterService
             var statusParam = status?.Trim() ?? "";
             var offset = (page - 1) * pageSize;
 
-            // Step 1 — count
             var countResult = await _client.Rpc(
                 "get_support_tickets_count",
                 new Dictionary<string, object>
@@ -87,7 +104,6 @@ public class HelpService : IHelpCenterService
             var totalCount = 0;
             int.TryParse(countResult.Content?.Trim('"'), out totalCount);
 
-            // Step 2 — fetch paginated data
             var dataResult = await _client.Rpc(
                 "get_support_tickets",
                 new Dictionary<string, object>
@@ -124,10 +140,10 @@ public class HelpService : IHelpCenterService
             return Response<PaginatedResponse<SupportTicketDTO>>
                 .SuccessResponse(paginated, "Tickets fetched");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return Response<PaginatedResponse<SupportTicketDTO>>
-                .Fail("Error: " + ex.Message);
+                .Fail("Unable to load tickets.");
         }
     }
 
@@ -151,12 +167,14 @@ public class HelpService : IHelpCenterService
                     "Ticket not found");
 
             return Response<SupportTicketDTO>
-                .SuccessResponse(MapToDTO(ticket), "Ticket fetched");
+                .SuccessResponse(
+                    await MapTicketToDtoAsync(ticket, includeReplies: true),
+                    "Ticket fetched");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return Response<SupportTicketDTO>
-                .Fail("Error: " + ex.Message);
+                .Fail("Unable to load ticket.");
         }
     }
 
@@ -186,12 +204,14 @@ public class HelpService : IHelpCenterService
                     "Ticket not found");
 
             return Response<SupportTicketDTO>
-                .SuccessResponse(MapToDTO(updated), "Status updated");
+                .SuccessResponse(
+                    await MapTicketToDtoAsync(updated, includeReplies: true),
+                    "Status updated");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return Response<SupportTicketDTO>
-                .Fail("Error: " + ex.Message);
+                .Fail("Unable to update ticket status.");
         }
     }
 
@@ -221,19 +241,15 @@ public class HelpService : IHelpCenterService
             return Response<TicketStatsDTO>
                 .SuccessResponse(stats, "Stats fetched");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return Response<TicketStatsDTO>
-                .Fail("Error: " + ex.Message);
+                .Fail("Unable to load ticket stats.");
         }
     }
 
-    // =============================================
-    // PRIVATE HELPER
-    // =============================================
-    //  single responsibility — maps model to DTO
     private static SupportTicketDTO MapToDTO(SupportTicket t) =>
-        new SupportTicketDTO
+        new()
         {
             Id = t.Id,
             TicketNumber = t.TicketNumber,
@@ -244,6 +260,10 @@ public class HelpService : IHelpCenterService
             Message = t.Message,
             Priority = t.Priority,
             Status = t.Status,
+            Team = t.Team,
+            AssignedTo = t.AssignedTo,
+            AssignedToName = t.AssignedToName,
+            FirstResponseAt = t.FirstResponseAt,
             CreatedAt = t.CreatedAt,
             UpdatedAt = t.UpdatedAt
         };

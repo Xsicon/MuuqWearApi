@@ -13,8 +13,37 @@ public class SupportTicketDTO
     public string Message { get; set; } = string.Empty;
     public string Priority { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+    public string? Team { get; set; }
+    public Guid? AssignedTo { get; set; }
+    public string? AssignedToName { get; set; }
+    public DateTime? FirstResponseAt { get; set; }
     public DateTime? CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
+    public int ReplyCount { get; set; }
+    public List<SupportTicketReplyDTO> Replies { get; set; } = [];
+}
+
+public class SupportTicketReplyDTO
+{
+    public Guid Id { get; set; }
+    public string SenderType { get; set; } = "agent";
+    public string? SenderName { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public DateTime? CreatedAt { get; set; }
+}
+
+public class UpdateTicketDTO
+{
+    public string? Status { get; set; }
+    public string? Priority { get; set; }
+    public string? Team { get; set; }
+    public Guid? AssignedTo { get; set; }
+    public string? AssignedToName { get; set; }
+}
+
+public class AddTicketReplyDTO
+{
+    public string Message { get; set; } = string.Empty;
 }
 
 // ─── SUBMIT TICKET DTO ───────────────────────────────────────
@@ -59,6 +88,12 @@ public static class TicketPriority
 {
     public const string High = "high";
     public const string Normal = "normal";
+    public const string Low = "low";
+
+    public static readonly string[] All = new[]
+    {
+        High, Normal, Low
+    };
 
     //  auto-assign priority based on category
     public static string FromCategory(string category) =>
@@ -72,13 +107,8 @@ public static class TicketPriority
         };
 }
 
-// ─── TICKET CATEGORIES ───────────────────────────────────────
-public static class TicketCategory
+public static class TicketSenderType
 {
-    public const string Orders = "Orders";
-    public const string Shipping = "Shipping";
-    public const string Returns = "Returns";
-    public const string Payments = "Payments";
-    public const string Account = "Account";
-    public const string ProductInfo = "Product Info";
+    public const string Customer = "customer";
+    public const string Agent = "agent";
 }

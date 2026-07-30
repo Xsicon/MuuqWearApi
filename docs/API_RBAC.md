@@ -127,12 +127,27 @@ All `api/Affiliate/admin/*` routes.
 | GET | `api/Help/admin/tickets` |
 | GET | `api/Help/admin/tickets/{ticketId}` |
 | PATCH | `api/Help/admin/tickets/{ticketId}/status` |
+| PATCH | `api/Help/admin/tickets/{ticketId}` |
+| POST | `api/Help/admin/tickets/{ticketId}/replies` |
+| POST | `api/Help/admin/tickets/{ticketId}/assign-me` |
 | GET | `api/Help/admin/stats` |
+| GET | `api/Help/admin/articles` |
+| GET | `api/Help/admin/articles/{articleId}` |
+| POST | `api/Help/admin/articles` |
+| PUT | `api/Help/admin/articles/{articleId}` |
+| PATCH | `api/Help/admin/articles/{articleId}/status` |
+| DELETE | `api/Help/admin/articles/{articleId}` |
+| POST | `api/Help/admin/upload-image` |
+| POST | `api/Help/admin/articles/{articleId}/comments` |
+| POST | `api/Help/admin/articles/{articleId}/vote` |
+| GET | `api/Help/admin/articles/{articleId}/engagement` |
 | GET | `api/Chat/active-sessions` |
 | GET | `api/Chat/messages/{sessionId}` |
 | GET | `api/Chat/session/{sessionId}` |
 | POST | `api/Chat/close/{sessionId}` |
 | GET | `api/Chat/session/{sessionId}/status` |
+
+Public help articles (no auth): `GET api/Help/articles`, `GET api/Help/articles/{id}`.
 
 ### Careers — AdminCareers
 

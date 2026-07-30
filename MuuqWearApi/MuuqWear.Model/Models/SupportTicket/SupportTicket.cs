@@ -34,6 +34,18 @@ public class SupportTicket : BaseModel
     [Column("status")]
     public string Status { get; set; } = TicketStatus.Open;
 
+    [Column("assigned_to")]
+    public Guid? AssignedTo { get; set; }
+
+    [Column("assigned_to_name")]
+    public string? AssignedToName { get; set; }
+
+    [Column("team")]
+    public string? Team { get; set; }
+
+    [Column("first_response_at")]
+    public DateTime? FirstResponseAt { get; set; }
+
     [Column("created_at")]
     public DateTime? CreatedAt { get; set; }
 
