@@ -53,4 +53,25 @@ public class Profiles : BaseModel
 
     [Column("affiliate_preferred_payment_method")]
     public string AffiliatePreferredPaymentMethod { get; set; } = "manual";
+
+    [Column("account_status")]
+    public string AccountStatus { get; set; } = "active";
+
+    [Column("suspended_until")]
+    public DateTime? SuspendedUntil { get; set; }
+
+    [Column("suspension_reason")]
+    public string? SuspensionReason { get; set; }
+
+    [Column("suspended_by_user_id")]
+    public Guid? SuspendedByUserId { get; set; }
+
+    [Column("suspended_at")]
+    public DateTime? SuspendedAt { get; set; }
+
+    [Column("reactivated_at")]
+    public DateTime? ReactivatedAt { get; set; }
+
+    [Column("reactivated_by_user_id")]
+    public Guid? ReactivatedByUserId { get; set; }
 }

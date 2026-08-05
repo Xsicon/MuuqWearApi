@@ -161,7 +161,10 @@ All `api/AdminSystem/*` routes.
 
 | Method | Path | Policy |
 |--------|------|--------|
-| GET | `api/Customer` | AdminCustomerNotesRead |
+| GET | `api/Customer` | AdminCustomerNotesRead (`?status=active\|suspended` optional) |
+| GET | `api/Customer/{id}` | AdminCustomerNotesRead |
+| PATCH | `api/Customer/{id}/suspend` | AdminCustomers |
+| PATCH | `api/Customer/{id}/reactivate` | AdminCustomers |
 | GET | `api/Customer/{id}/notes` | AdminCustomerNotesRead |
 | POST | `api/Customer/{id}/notes` | AdminCustomers |
 

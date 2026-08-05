@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.IdentityModel.Tokens;
 using MuuqWear.API.Authorization;
 using MuuqWear.API.Interfaces;
+using MuuqWear.API.Middleware;
 using MuuqWear.API.Service;
 using MuuqWear.Application.Interfaces;
 using MuuqWear.Application.Service;
@@ -152,6 +153,7 @@ if (app.Environment.IsDevelopment())
 }
 app.UseCors("AllowFrontend");
 app.UseAuthentication();
+app.UseMiddleware<AccountStatusMiddleware>();
 app.UseAuthorization();
 app.MapControllers();
 //app.MapHub<ChatHub>("/chathub");

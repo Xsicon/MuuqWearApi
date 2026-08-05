@@ -9,7 +9,8 @@ public class ProfileDTO
     public bool? IsDeleted { get; set; }
     public DateTime? NotificationsReadAt { get; set; }
     public string? AffiliateTier { get; set; }
-
+    public string AccountStatus { get; set; } = "active";
+    public DateTime? SuspendedUntil { get; set; }
 }
 
 public class UpdateProfileDTO

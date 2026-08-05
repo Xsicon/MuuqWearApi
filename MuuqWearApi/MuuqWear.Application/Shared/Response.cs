@@ -23,4 +23,14 @@ public class Response<T>
             Message = message
         };
     }
+
+    public static Response<T> Fail(string message, T data)
+    {
+        return new Response<T>
+        {
+            Success = false,
+            Message = message,
+            Data = data
+        };
+    }
 }

@@ -23,14 +23,96 @@ public class CustomerController : BaseController
     [Authorize(Policy = AdminAuthorizationPolicies.AdminCustomerNotesRead)]
     public async Task<ActionResult<Response<PaginatedResponse<CustomerDTO>>>> GetAll(
         [FromQuery] string? search = null,
+        [FromQuery] string? status = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
-        var result = await _customerService.GetAll(search, page, pageSize);
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var normalized = status.Trim().ToLowerInvariant();
+            if (normalized is not ("active" or "suspended" or "all"))
+            {
+                return BadRequest(Response<PaginatedResponse<CustomerDTO>>
+                    .Fail("status must be active, suspended, or all"));
+            }
+
+            if (normalized == "all")
+                status = null;
+            else
+                status = normalized;
+        }
+
+        var result = await _customerService.GetAll(search, page, pageSize, status);
         if (!result.Success) return BadRequest(result);
+        return HandleResponse(result);
+    }
+
+    [HttpGet("{customerId:guid}")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminCustomerNotesRead)]
+    public async Task<ActionResult<Response<CustomerDTO>>> GetById(Guid customerId)
+    {
+        if (customerId == Guid.Empty)
+            return BadRequest(Response<CustomerDTO>.Fail("Invalid customer id"));
+
+        var result = await _customerService.GetById(customerId);
+        if (!result.Success && result.Message == "Customer not found")
+            return NotFound(result);
+        if (!result.Success)
+            return BadRequest(result);
+
+        return HandleResponse(result);
+    }
+
+    [HttpPatch("{customerId:guid}/suspend")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminCustomers)]
+    public async Task<ActionResult<Response<CustomerDTO>>> Suspend(
+        Guid customerId,
+        [FromBody] SuspendCustomerDTO request)
+    {
+        if (customerId == Guid.Empty)
+            return BadRequest(Response<CustomerDTO>.Fail("Invalid customer id"));
+
+        var adminId = GetUserId();
+        if (adminId == Guid.Empty)
+            return Unauthorized(Response<CustomerDTO>.Fail("Not authenticated"));
+
+        if (adminId == customerId)
+            return BadRequest(Response<CustomerDTO>.Fail("You cannot suspend your own account"));
+
+        if (request == null)
+            return BadRequest(Response<CustomerDTO>.Fail("Request body is required"));
+
+        var result = await _customerService.Suspend(customerId, request, adminId);
+        if (!result.Success && result.Message == "Customer not found")
+            return NotFound(result);
+        if (!result.Success)
+            return BadRequest(result);
+
+        return HandleResponse(result);
+    }
+
+    [HttpPatch("{customerId:guid}/reactivate")]
+    [Authorize(Policy = AdminAuthorizationPolicies.AdminCustomers)]
+    public async Task<ActionResult<Response<CustomerDTO>>> Reactivate(
+        Guid customerId,
+        [FromBody] ReactivateCustomerDTO? request = null)
+    {
+        if (customerId == Guid.Empty)
+            return BadRequest(Response<CustomerDTO>.Fail("Invalid customer id"));
+
+        var adminId = GetUserId();
+        if (adminId == Guid.Empty)
+            return Unauthorized(Response<CustomerDTO>.Fail("Not authenticated"));
+
+        var result = await _customerService.Reactivate(customerId, request, adminId);
+        if (!result.Success && result.Message == "Customer not found")
+            return NotFound(result);
+        if (!result.Success)
+            return BadRequest(result);
+
         return HandleResponse(result);
     }
 

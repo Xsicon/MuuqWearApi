@@ -1,6 +1,5 @@
 ﻿namespace MuuqWear.Model.DTO.CustomerDTO;
 
-
 public class CustomerDTO
 {
     public Guid Id { get; set; }
@@ -15,4 +14,9 @@ public class CustomerDTO
     public DateTime? LatestNoteAt { get; set; }
     public string? LatestNoteAuthorName { get; set; }
     public string? LatestNoteAuthorRole { get; set; }
+
+    public string AccountStatus { get; set; } = AccountStatusValues.Active;
+    public DateTime? SuspendedUntil { get; set; }
+    public string? SuspensionReason { get; set; }
+    public DateTime? SuspendedAt { get; set; }
 }

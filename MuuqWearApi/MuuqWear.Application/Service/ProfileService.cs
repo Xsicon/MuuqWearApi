@@ -1,11 +1,10 @@
 ﻿using Microsoft.Extensions.Caching.Memory;
-using MuuqWear.API.Interfaces;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
 using MuuqWear.Application.Shared;
+using MuuqWear.Model.DTO.CustomerDTO;
 using MuuqWear.Model.DTO.ProfileDTO;
 using MuuqWear.Model.Models.Profiles;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace MuuqWear.API.Service;
 
@@ -20,9 +19,6 @@ public class ProfileService : IProfileService
         _cache = cache;
     }
 
-    // =============================================
-    // GET PROFILE
-    // =============================================
     public async Task<Response<ProfileDTO>> GetProfile(Guid userId)
     {
         try
@@ -36,29 +32,47 @@ public class ProfileService : IProfileService
             if (result == null)
                 return Response<ProfileDTO>.Fail("Profile not found");
 
-            var profileDTO = new ProfileDTO
-            {
-                Id = (Guid)result.Id!,
-                FullName = result.FullName,
-                Email = result.Email,
-                Phone = result.Phone,
-                IsDeleted = result.IsDeleted,
-                NotificationsReadAt = result.NotificationsReadAt,
-                AffiliateTier = result.AffiliateTier
-            };
+            await AccountAccessGuard.ClearExpiredSuspensionAsync(_client, result);
 
             return Response<ProfileDTO>.SuccessResponse(
-                profileDTO, "Profile fetched");
+                MapProfile(result), "Profile fetched");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return Response<ProfileDTO>.Fail("Error: " + ex.Message);
+            return Response<ProfileDTO>.Fail("Unable to load profile.");
         }
     }
 
-    // =============================================
-    // UPDATE PROFILE
-    // =============================================
+    public async Task<Response<AccountAccessStatusDTO>> GetAccountAccessStatus(Guid userId)
+    {
+        try
+        {
+            var profile = await AccountAccessGuard.LoadProfileAsync(_client, userId);
+            if (profile == null)
+                return Response<AccountAccessStatusDTO>.Fail("Profile not found");
+
+            await AccountAccessGuard.ClearExpiredSuspensionAsync(_client, profile);
+
+            var status = AccountAccessGuard.ResolveEffectiveStatus(profile);
+            var dto = new AccountAccessStatusDTO
+            {
+                IsActive = status == AccountStatusValues.Active,
+                AccountStatus = status,
+                SuspendedUntil = AccountAccessGuard.IsCurrentlySuspended(profile)
+                    ? profile.SuspendedUntil
+                    : null
+            };
+
+            return Response<AccountAccessStatusDTO>.SuccessResponse(
+                dto,
+                dto.IsActive ? "Account active" : "Account inactive");
+        }
+        catch (Exception)
+        {
+            return Response<AccountAccessStatusDTO>.Fail("Unable to load account status.");
+        }
+    }
+
     public async Task<Response<ProfileDTO>> UpdateProfile(
         Guid userId, UpdateProfileDTO request)
     {
@@ -75,32 +89,19 @@ public class ProfileService : IProfileService
             if (updated == null)
                 return Response<ProfileDTO>.Fail("Failed to update profile");
 
-            var profileDTO = new ProfileDTO
-            {
-                Id = (Guid)updated.Id!,
-                FullName = updated.FullName,
-                Email = updated.Email,
-                Phone = updated.Phone
-            };
-
             return Response<ProfileDTO>.SuccessResponse(
-                profileDTO, "Profile updated successfully");
+                MapProfile(updated), "Profile updated successfully");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return Response<ProfileDTO>.Fail("Error: " + ex.Message);
+            return Response<ProfileDTO>.Fail("Unable to update profile.");
         }
     }
 
-    // =============================================
-    // DELETE ACCOUNT (soft delete)
-    // =============================================
     public async Task<Response<bool>> DeleteAccount(Guid userId)
     {
         try
         {
-            // soft delete — just mark as deleted
-            // real data preserved for records 
             var result = await _client
                 .From<Profiles>()
                 .Filter("id", Supabase.Postgrest.Constants.Operator.Equals,
@@ -116,15 +117,12 @@ public class ProfileService : IProfileService
             return Response<bool>.SuccessResponse(
                 true, "Account deleted successfully");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return Response<bool>.Fail("Error: " + ex.Message);
+            return Response<bool>.Fail("Unable to delete account.");
         }
     }
 
-    // =============================================
-    // UPDATE LAST ACTIVE
-    // =============================================
     public async Task UpdateLastActive(Guid userId)
     {
         var cacheKey = ApiCacheKeys.LastActive(userId);
@@ -153,4 +151,19 @@ public class ProfileService : IProfileService
             .Update();
     }
 
+    private static ProfileDTO MapProfile(Profiles result) =>
+        new()
+        {
+            Id = (Guid)result.Id!,
+            FullName = result.FullName,
+            Email = result.Email,
+            Phone = result.Phone,
+            IsDeleted = result.IsDeleted,
+            NotificationsReadAt = result.NotificationsReadAt,
+            AffiliateTier = result.AffiliateTier,
+            AccountStatus = AccountAccessGuard.ResolveEffectiveStatus(result),
+            SuspendedUntil = AccountAccessGuard.IsCurrentlySuspended(result)
+                ? result.SuspendedUntil
+                : null
+        };
 }

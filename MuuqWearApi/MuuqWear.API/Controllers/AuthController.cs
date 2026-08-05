@@ -6,6 +6,7 @@ using MuuqWear.API.Interfaces;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Controllers;
 using MuuqWear.Model.DTO.AuthDTO;
+using MuuqWear.Model.DTO.CustomerDTO;
 
 namespace MuuqWear.API.Controllers
 {
@@ -34,20 +35,14 @@ namespace MuuqWear.API.Controllers
         public async Task<ActionResult<Response<AuthResponseDTO>>> VerifyOTP(VerifyOTPRequestDTO request)
         {
             var response = await _authService.VerifyOTP(request);
-            if (!response.Success)
-                return BadRequest(response);
-
-            return HandleResponse(response);
+            return HandleAuthResponse(response);
         }
 
         [HttpPost("login")]
         public async Task<ActionResult<Response<AuthResponseDTO>>> Login(LoginRequestDTO request)
         {
             var response = await _authService.Login(request);
-            if (!response.Success)
-                return BadRequest(response);
-
-            return HandleResponse(response);
+            return HandleAuthResponse(response);
         }
 
         [HttpPost("logout")]
@@ -65,7 +60,6 @@ namespace MuuqWear.API.Controllers
         public async Task<ActionResult<Response<int>>> SendMagicLink(
     [FromBody] MagicLinkRequestDTO request)
         {
-            // validate request
             if (string.IsNullOrWhiteSpace(request.Email))
                 return BadRequest(Response<int>.Fail("Email is required"));
 
@@ -87,10 +81,7 @@ namespace MuuqWear.API.Controllers
             var response = await _authService.VerifyMagicLink(
                 request.AccessToken, request.RefreshToken ?? "");
 
-            if (!response.Success)
-                return BadRequest(response);
-
-            return HandleResponse(response);
+            return HandleAuthResponse(response);
         }
 
         [HttpGet("google-signin-url")]
@@ -109,7 +100,6 @@ namespace MuuqWear.API.Controllers
         public async Task<ActionResult<Response<int>>> ForgotPassword(
     [FromBody] ForgotPasswordRequestDTO request)
         {
-            // validate request
             if (string.IsNullOrWhiteSpace(request.Email))
                 return BadRequest(Response<int>.Fail("Email is required"));
 
@@ -125,7 +115,6 @@ namespace MuuqWear.API.Controllers
         public async Task<ActionResult<Response<int>>> ResetPassword(
             [FromBody] ResetPasswordRequestDTO request)
         {
-            // validate request
             if (string.IsNullOrWhiteSpace(request.AccessToken))
                 return BadRequest(Response<int>.Fail("Invalid token"));
 
@@ -153,14 +142,23 @@ namespace MuuqWear.API.Controllers
                 return BadRequest(Response<AuthResponseDTO>.Fail("Refresh token is required"));
 
             var response = await _authService.RefreshToken(request.RefreshToken);
+            return HandleAuthResponse(response);
+        }
 
-            if (!response.Success)
-                return BadRequest(response);
+        private ActionResult<Response<AuthResponseDTO>> HandleAuthResponse(
+            Response<AuthResponseDTO> response)
+        {
+            if (response.Success)
+                return HandleResponse(response);
 
-            return HandleResponse(response);
+            var status = response.Data?.AccountStatus;
+            if (string.Equals(status, AccountStatusValues.Suspended, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(status, AccountStatusValues.Deleted, StringComparison.OrdinalIgnoreCase))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, response);
+            }
+
+            return BadRequest(response);
         }
     }
-
-
-
 }

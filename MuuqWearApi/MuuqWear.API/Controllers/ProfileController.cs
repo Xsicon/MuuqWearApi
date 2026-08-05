@@ -4,14 +4,8 @@ using MuuqWear.API.DTO;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Interfaces;
 using MuuqWear.Application.Shared;
+using MuuqWear.Model.DTO.CustomerDTO;
 using MuuqWear.Model.DTO.ProfileDTO;
-using Supabase.Gotrue;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Security.Claims;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace MuuqWear.Application.Controllers;
 [ApiController]
@@ -46,7 +40,7 @@ public class ProfileController : BaseController
 
         var userId = GetUserId();
         if (userId == Guid.Empty)
-            return StatusCode(401, Response<OrderDTO>.Fail("Not authenticated"));
+            return StatusCode(401, Response<ProfileDTO>.Fail("Not authenticated"));
 
         var result = await _profileService.UpdateProfile(userId, request);
         if (!result.Success)
@@ -60,7 +54,7 @@ public class ProfileController : BaseController
     {
         var userId = GetUserId();
         if (userId == Guid.Empty)
-            return StatusCode(401, Response<OrderDTO>.Fail("Not authenticated"));
+            return StatusCode(401, Response<bool>.Fail("Not authenticated"));
 
         var result = await _profileService.DeleteAccount(userId);
         if (!result.Success)
@@ -71,22 +65,17 @@ public class ProfileController : BaseController
 
     // ─── CHECK IF ACTIVE ──────────────────────────────────────────
     [HttpGet("is-active")]
-    public async Task<IActionResult> IsActive()
+    public async Task<ActionResult<Response<AccountAccessStatusDTO>>> IsActive()
     {
         var userId = GetUserId();
         if (userId == Guid.Empty)
-            return StatusCode(401, Response<OrderDTO>.Fail("Not authenticated"));
+            return StatusCode(401, Response<AccountAccessStatusDTO>.Fail("Not authenticated"));
 
-        var result = await _profileService.GetProfile(userId);
-
+        var result = await _profileService.GetAccountAccessStatus(userId);
         if (!result.Success)
-            return BadRequest(Response<bool>.Fail("Profile not found"));
+            return BadRequest(result);
 
-        //  return whether account is active
-        if (result.Data?.IsDeleted == true)
-            return Ok(Response<bool>.SuccessResponse(false, "Account deleted"));
-
-        return Ok(Response<bool>.SuccessResponse(true, "Account active"));
+        return Ok(result);
     }
 
     // =============================================

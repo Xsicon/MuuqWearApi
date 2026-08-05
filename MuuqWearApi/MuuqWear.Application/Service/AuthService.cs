@@ -5,6 +5,7 @@ using MuuqWear.API.DTO;
 using MuuqWear.API.Interfaces;
 using MuuqWear.API.Shared;
 using MuuqWear.Application.Shared;
+using MuuqWear.Model.DTO.CustomerDTO;
 using MuuqWear.Model.Models.Profiles;
 using Supabase.Gotrue;
 using System.Net.Http.Json;
@@ -94,6 +95,10 @@ public class AuthService : IAuthService
     .From<Profiles>()
     .Filter("id", Supabase.Postgrest.Constants.Operator.Equals, session.User!.Id!)
     .Single();
+            var blocked = await BlockIfUnavailableAsync(profile);
+            if (blocked != null)
+                return blocked;
+
             var role = profile?.Role ?? "user";
             var authData = new AuthResponseDTO
             {
@@ -108,8 +113,6 @@ public class AuthService : IAuthService
                 UserName = fullName,
                 Role = role
             };
-
-            // fetch role separately — don't let it break OTP flow
 
             return Response<AuthResponseDTO>.SuccessResponse(
                 authData,
@@ -144,9 +147,9 @@ public class AuthService : IAuthService
      .Get();
 
             var profile = response.Models.FirstOrDefault();
-            if (profile?.IsDeleted == true)
-                return Response<AuthResponseDTO>.Fail(
-                    "This account has been deleted. Please contact support.");
+            var blocked = await BlockIfUnavailableAsync(profile);
+            if (blocked != null)
+                return blocked;
 
             var role = profile?.Role ?? "user";
             var authData = new AuthResponseDTO
@@ -269,6 +272,10 @@ public class AuthService : IAuthService
 
                 await _client.From<Profiles>().Insert(profile);
             }
+
+            var blocked = await BlockIfUnavailableAsync(profile);
+            if (blocked != null)
+                return blocked;
 
             var role = profile?.Role ?? "user";
             var authData = new AuthResponseDTO
@@ -473,12 +480,9 @@ public class AuthService : IAuthService
                     .Get();
 
                 profile = profileResponse.Models.FirstOrDefault();
-                System.Diagnostics.Debug.WriteLine($"RefreshToken check — userId: {userIdStr}");
-                System.Diagnostics.Debug.WriteLine($"Profile found: {profile != null}");
-                System.Diagnostics.Debug.WriteLine($"IsDeleted: {profile?.IsDeleted}");
-                if (profile?.IsDeleted == true)
-                    return Response<AuthResponseDTO>.Fail(
-                        "This account has been deleted.");
+                var blocked = await BlockIfUnavailableAsync(profile);
+                if (blocked != null)
+                    return blocked;
             }
 
             var role = profile?.Role ?? "user";
@@ -504,5 +508,37 @@ public class AuthService : IAuthService
         {
             return Response<AuthResponseDTO>.Fail("Error: " + ex.Message);
         }
+    }
+
+    private async Task<Response<AuthResponseDTO>?> BlockIfUnavailableAsync(Profiles? profile)
+    {
+        if (profile == null)
+            return null;
+
+        await AccountAccessGuard.ClearExpiredSuspensionAsync(_client, profile);
+
+        if (profile.IsDeleted)
+        {
+            return Response<AuthResponseDTO>.Fail(
+                "This account has been deleted. Please contact support.",
+                new AuthResponseDTO
+                {
+                    AccountStatus = AccountStatusValues.Deleted
+                });
+        }
+
+        if (AccountAccessGuard.IsCurrentlySuspended(profile))
+        {
+            var until = profile.SuspendedUntil!.Value;
+            return Response<AuthResponseDTO>.Fail(
+                AccountSuspension.BuildSuspendedMessage(until),
+                new AuthResponseDTO
+                {
+                    AccountStatus = AccountStatusValues.Suspended,
+                    SuspendedUntil = until
+                });
+        }
+
+        return null;
     }
 }

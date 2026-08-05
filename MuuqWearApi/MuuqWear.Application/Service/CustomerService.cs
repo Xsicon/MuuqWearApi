@@ -2,7 +2,6 @@
 using MuuqWear.Application.Interfaces;
 using MuuqWear.Application.Shared;
 using MuuqWear.Model.DTO.CustomerDTO;
-using MuuqWear.Model.Models.CustomerNote;
 using MuuqWear.Model.Models.Profiles;
 using System.Text.Json;
 using CustomerNoteRecord = MuuqWear.Model.Models.CustomerNote.CustomerNote;
@@ -26,12 +25,16 @@ public class CustomerService : ICustomerService
     }
 
     public async Task<Response<PaginatedResponse<CustomerDTO>>> GetAll(
-        string? search, int page, int pageSize)
+        string? search, int page, int pageSize, string? status = null)
     {
         try
         {
             var searchTerm = search?.Trim() ?? "";
             var offset = (page - 1) * pageSize;
+            var statusFilter = NormalizeStatusFilter(status);
+
+            if (statusFilter != null)
+                return await GetAllFilteredByStatus(searchTerm, statusFilter, page, pageSize, offset);
 
             var countResult = await _client.Rpc(
                 "get_customers_count",
@@ -52,59 +55,155 @@ public class CustomerService : ICustomerService
                     { "p_offset", offset }
                 });
 
-            var options = new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true,
-                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
-            };
+            var customers = DeserializeCustomers(dataResult.Content);
+            await EnrichCustomersAsync(customers);
 
-            var customers = JsonSerializer
-                .Deserialize<List<CustomerDTO>>(
-                    dataResult.Content ?? "[]", options)
-                ?? new List<CustomerDTO>();
-
-            var customerIds = customers
-                .Select(c => c.Id)
-                .Where(id => id != Guid.Empty)
-                .ToList();
-
-            var summaries = await GetNoteSummariesForCustomers(customerIds);
-
-            foreach (var customer in customers)
-            {
-                if (summaries.TryGetValue(customer.Id, out var summary))
-                {
-                    customer.NoteCount = summary.NoteCount;
-                    customer.LatestNotePreview = summary.LatestNotePreview;
-                    customer.LatestNoteAt = summary.LatestNoteAt;
-                    customer.LatestNoteAuthorName = summary.LatestNoteAuthorName;
-                    customer.LatestNoteAuthorRole = summary.LatestNoteAuthorRole;
-                }
-            }
-
-            var totalPages = totalCount == 0
-                ? 0
-                : (int)Math.Ceiling((double)totalCount / pageSize);
-
-            var paginatedResponse = new PaginatedResponse<CustomerDTO>
-            {
-                Data = customers,
-                TotalCount = totalCount,
-                Page = page,
-                PageSize = pageSize,
-                TotalPages = totalPages,
-                HasMore = page < totalPages,
-                HasPreviousPage = page > 1,
-                HasNextPage = page < totalPages
-            };
-
-            return Response<PaginatedResponse<CustomerDTO>>
-                .SuccessResponse(paginatedResponse, "Customers fetched");
+            return SuccessPage(customers, totalCount, page, pageSize);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return Response<PaginatedResponse<CustomerDTO>>
-                .Fail("Error: " + ex.Message);
+                .Fail("Unable to load customers.");
+        }
+    }
+
+    public async Task<Response<CustomerDTO>> GetById(Guid customerId)
+    {
+        try
+        {
+            var profile = await GetProfileByIdAsync(customerId);
+            if (profile == null)
+                return Response<CustomerDTO>.Fail(CustomerNotFoundMessage);
+
+            await AccountAccessGuard.ClearExpiredSuspensionAsync(_adminClient, profile);
+
+            var dto = MapProfileToCustomerDto(profile);
+            await EnrichCustomersAsync([dto]);
+            return Response<CustomerDTO>.SuccessResponse(dto, "Customer fetched");
+        }
+        catch (Exception)
+        {
+            return Response<CustomerDTO>.Fail("Unable to load customer.");
+        }
+    }
+
+    public async Task<Response<CustomerDTO>> Suspend(
+        Guid customerId, SuspendCustomerDTO request, Guid adminUserId)
+    {
+        try
+        {
+            if (request == null)
+                return Response<CustomerDTO>.Fail("Request body is required");
+
+            if (!AccountSuspension.IsAllowedDuration(request.DurationDays))
+            {
+                return Response<CustomerDTO>.Fail(
+                    "DurationDays must be one of: 1, 3, 7, 14, 30, 60, 90, 180, 365");
+            }
+
+            var reason = NormalizeReason(request.Reason);
+            if (reason != null && reason.Length > AccountSuspension.MaxReasonLength)
+            {
+                return Response<CustomerDTO>.Fail(
+                    $"Reason must be {AccountSuspension.MaxReasonLength} characters or fewer");
+            }
+
+            var profile = await GetProfileByIdAsync(customerId);
+            if (profile == null)
+                return Response<CustomerDTO>.Fail(CustomerNotFoundMessage);
+
+            if (profile.IsDeleted)
+                return Response<CustomerDTO>.Fail("Cannot suspend a deleted account");
+
+            await AccountAccessGuard.ClearExpiredSuspensionAsync(_adminClient, profile);
+
+            var now = DateTime.UtcNow;
+            // Re-suspend always recalculates from now (does not stack onto prior SuspendedUntil).
+            var until = AccountSuspension.ComputeSuspendedUntil(request.DurationDays, now);
+
+            var result = await _adminClient
+                .From<Profiles>()
+                .Filter("id",
+                    Supabase.Postgrest.Constants.Operator.Equals,
+                    customerId.ToString())
+                .Set(p => p.AccountStatus, AccountStatusValues.Suspended)
+                .Set(p => p.SuspendedUntil!, until)
+                .Set(p => p.SuspensionReason!, reason)
+                .Set(p => p.SuspendedByUserId!, adminUserId)
+                .Set(p => p.SuspendedAt!, now)
+                .Set(p => p.ReactivatedAt!, null)
+                .Set(p => p.ReactivatedByUserId!, null)
+                .Update();
+
+            var updated = result.Models.FirstOrDefault();
+            if (updated == null)
+                return Response<CustomerDTO>.Fail("Failed to suspend customer");
+
+            var noteBody = reason == null
+                ? $"Account suspended for {request.DurationDays} days."
+                : $"Account suspended for {request.DurationDays} days. Reason: {reason}";
+            await TryCreateSystemNote(customerId, noteBody, adminUserId);
+
+            var dto = MapProfileToCustomerDto(updated);
+            await EnrichCustomersAsync([dto]);
+            return Response<CustomerDTO>.SuccessResponse(dto, "Customer suspended");
+        }
+        catch (Exception)
+        {
+            return Response<CustomerDTO>.Fail("Unable to suspend customer.");
+        }
+    }
+
+    public async Task<Response<CustomerDTO>> Reactivate(
+        Guid customerId, ReactivateCustomerDTO? request, Guid adminUserId)
+    {
+        try
+        {
+            var profile = await GetProfileByIdAsync(customerId);
+            if (profile == null)
+                return Response<CustomerDTO>.Fail(CustomerNotFoundMessage);
+
+            if (profile.IsDeleted)
+                return Response<CustomerDTO>.Fail("Cannot reactivate a deleted account");
+
+            var reason = NormalizeReason(request?.Reason);
+            if (reason != null && reason.Length > AccountSuspension.MaxReasonLength)
+            {
+                return Response<CustomerDTO>.Fail(
+                    $"Reason must be {AccountSuspension.MaxReasonLength} characters or fewer");
+            }
+
+            var now = DateTime.UtcNow;
+            var result = await _adminClient
+                .From<Profiles>()
+                .Filter("id",
+                    Supabase.Postgrest.Constants.Operator.Equals,
+                    customerId.ToString())
+                .Set(p => p.AccountStatus, AccountStatusValues.Active)
+                .Set(p => p.SuspendedUntil!, null)
+                .Set(p => p.SuspensionReason!, null)
+                .Set(p => p.SuspendedByUserId!, null)
+                .Set(p => p.SuspendedAt!, null)
+                .Set(p => p.ReactivatedAt!, now)
+                .Set(p => p.ReactivatedByUserId!, adminUserId)
+                .Update();
+
+            var updated = result.Models.FirstOrDefault();
+            if (updated == null)
+                return Response<CustomerDTO>.Fail("Failed to reactivate customer");
+
+            var noteBody = reason == null
+                ? "Account reactivated by admin."
+                : $"Account reactivated by admin. Reason: {reason}";
+            await TryCreateSystemNote(customerId, noteBody, adminUserId);
+
+            var dto = MapProfileToCustomerDto(updated);
+            await EnrichCustomersAsync([dto]);
+            return Response<CustomerDTO>.SuccessResponse(dto, "Customer reactivated");
+        }
+        catch (Exception)
+        {
+            return Response<CustomerDTO>.Fail("Unable to reactivate customer.");
         }
     }
 
@@ -141,10 +240,10 @@ public class CustomerService : ICustomerService
             return Response<List<CustomerNoteDTO>>
                 .SuccessResponse(dtos, "Notes fetched");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return Response<List<CustomerNoteDTO>>
-                .Fail("Error: " + ex.Message);
+                .Fail("Unable to load notes.");
         }
     }
 
@@ -190,11 +289,220 @@ public class CustomerService : ICustomerService
             return Response<CustomerNoteDTO>.SuccessResponse(
                 MapNoteToDto(inserted, authorProfile), "Note created");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return Response<CustomerNoteDTO>.Fail("Error: " + ex.Message);
+            return Response<CustomerNoteDTO>.Fail("Unable to create note.");
         }
     }
+
+    private async Task<Response<PaginatedResponse<CustomerDTO>>> GetAllFilteredByStatus(
+        string searchTerm,
+        string statusFilter,
+        int page,
+        int pageSize,
+        int offset)
+    {
+        var profilesResult = await _adminClient
+            .From<Profiles>()
+            .Filter("is_deleted",
+                Supabase.Postgrest.Constants.Operator.Equals,
+                "false")
+            .Get();
+
+        var now = DateTime.UtcNow;
+        IEnumerable<Profiles> filtered = profilesResult.Models
+            .Where(p => IsCustomerRole(p.Role));
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            filtered = filtered.Where(p =>
+                (p.FullName?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (p.Email?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+
+        filtered = statusFilter == AccountStatusValues.Suspended
+            ? filtered.Where(p => AccountAccessGuard.IsCurrentlySuspended(p, now))
+            : filtered.Where(p => !AccountAccessGuard.IsCurrentlySuspended(p, now));
+
+        var materialized = filtered
+            .OrderByDescending(p => p.CreatedAt)
+            .ToList();
+
+        var totalCount = materialized.Count;
+        var pageProfiles = materialized.Skip(offset).Take(pageSize).ToList();
+        var customers = pageProfiles.Select(MapProfileToCustomerDto).ToList();
+
+        // Merge order stats from the unfiltered RPC when available.
+        var rpcCustomers = await TryLoadRpcCustomers(searchTerm, Math.Max(totalCount, pageSize));
+        var rpcMap = rpcCustomers.ToDictionary(c => c.Id);
+        foreach (var customer in customers)
+        {
+            if (rpcMap.TryGetValue(customer.Id, out var rpc))
+            {
+                customer.OrderCount = rpc.OrderCount;
+                customer.TotalSpent = rpc.TotalSpent;
+                customer.LastOrderAt = rpc.LastOrderAt;
+            }
+        }
+
+        await EnrichCustomersAsync(customers);
+        return SuccessPage(customers, totalCount, page, pageSize);
+    }
+
+    private async Task EnrichCustomersAsync(List<CustomerDTO> customers)
+    {
+        var customerIds = customers
+            .Select(c => c.Id)
+            .Where(id => id != Guid.Empty)
+            .ToList();
+
+        if (customerIds.Count == 0)
+            return;
+
+        var profiles = await GetProfilesByIdsAsync(customerIds);
+        var profileMap = profiles
+            .Where(p => p.Id.HasValue)
+            .ToDictionary(p => p.Id!.Value);
+
+        foreach (var customer in customers)
+        {
+            if (!profileMap.TryGetValue(customer.Id, out var profile))
+                continue;
+
+            await AccountAccessGuard.ClearExpiredSuspensionAsync(_adminClient, profile);
+            ApplyAccountFields(customer, profile);
+        }
+
+        var summaries = await GetNoteSummariesForCustomers(customerIds);
+        foreach (var customer in customers)
+        {
+            if (!summaries.TryGetValue(customer.Id, out var summary))
+                continue;
+
+            customer.NoteCount = summary.NoteCount;
+            customer.LatestNotePreview = summary.LatestNotePreview;
+            customer.LatestNoteAt = summary.LatestNoteAt;
+            customer.LatestNoteAuthorName = summary.LatestNoteAuthorName;
+            customer.LatestNoteAuthorRole = summary.LatestNoteAuthorRole;
+        }
+    }
+
+    private async Task<List<CustomerDTO>> TryLoadRpcCustomers(string searchTerm, int pageSize)
+    {
+        try
+        {
+            var dataResult = await _client.Rpc(
+                "get_customers",
+                new Dictionary<string, object>
+                {
+                    { "p_search_term", searchTerm },
+                    { "p_page_size", Math.Clamp(pageSize, 1, 500) },
+                    { "p_offset", 0 }
+                });
+
+            return DeserializeCustomers(dataResult.Content);
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private async Task TryCreateSystemNote(Guid customerId, string body, Guid authorUserId)
+    {
+        try
+        {
+            await CreateNote(customerId, body, authorUserId);
+        }
+        catch
+        {
+            // Audit note is best-effort.
+        }
+    }
+
+    private static List<CustomerDTO> DeserializeCustomers(string? content)
+    {
+        var options = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+        };
+
+        return JsonSerializer.Deserialize<List<CustomerDTO>>(content ?? "[]", options)
+               ?? [];
+    }
+
+    private static Response<PaginatedResponse<CustomerDTO>> SuccessPage(
+        List<CustomerDTO> customers, int totalCount, int page, int pageSize)
+    {
+        var totalPages = totalCount == 0
+            ? 0
+            : (int)Math.Ceiling((double)totalCount / pageSize);
+
+        return Response<PaginatedResponse<CustomerDTO>>.SuccessResponse(
+            new PaginatedResponse<CustomerDTO>
+            {
+                Data = customers,
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize,
+                TotalPages = totalPages,
+                HasMore = page < totalPages,
+                HasPreviousPage = page > 1,
+                HasNextPage = page < totalPages
+            },
+            "Customers fetched");
+    }
+
+    private static CustomerDTO MapProfileToCustomerDto(Profiles profile) =>
+        new()
+        {
+            Id = profile.Id ?? Guid.Empty,
+            FullName = profile.FullName,
+            Email = profile.Email,
+            CreatedAt = profile.CreatedAt,
+            AccountStatus = AccountAccessGuard.ResolveEffectiveStatus(profile),
+            SuspendedUntil = AccountAccessGuard.IsCurrentlySuspended(profile)
+                ? profile.SuspendedUntil
+                : null,
+            SuspensionReason = profile.SuspensionReason,
+            SuspendedAt = profile.SuspendedAt
+        };
+
+    private static void ApplyAccountFields(CustomerDTO customer, Profiles profile)
+    {
+        var effective = AccountAccessGuard.ResolveEffectiveStatus(profile);
+        customer.AccountStatus = effective == AccountStatusValues.Deleted
+            ? AccountStatusValues.Deleted
+            : effective;
+        customer.SuspendedUntil = AccountAccessGuard.IsCurrentlySuspended(profile)
+            ? profile.SuspendedUntil
+            : null;
+        customer.SuspensionReason = profile.SuspensionReason;
+        customer.SuspendedAt = profile.SuspendedAt;
+    }
+
+    private static string? NormalizeStatusFilter(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+            return null;
+
+        var normalized = status.Trim().ToLowerInvariant();
+        return normalized is AccountStatusValues.Active or AccountStatusValues.Suspended
+            ? normalized
+            : null;
+    }
+
+    private static string? NormalizeReason(string? reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+            return null;
+        return reason.Trim();
+    }
+
+    private static bool IsCustomerRole(string? role) =>
+        string.IsNullOrWhiteSpace(role)
+        || role.Equals("user", StringComparison.OrdinalIgnoreCase);
 
     private async Task<bool> CustomerExistsAsync(Guid customerId)
     {
@@ -204,12 +512,7 @@ public class CustomerService : ICustomerService
 
     private async Task<Profiles?> GetProfileByIdAsync(Guid userId)
     {
-        return await _adminClient
-            .From<Profiles>()
-            .Filter("id",
-                Supabase.Postgrest.Constants.Operator.Equals,
-                userId.ToString())
-            .Single();
+        return await AccountAccessGuard.LoadProfileAsync(_adminClient, userId);
     }
 
     private async Task<List<Profiles>> GetProfilesByIdsAsync(
