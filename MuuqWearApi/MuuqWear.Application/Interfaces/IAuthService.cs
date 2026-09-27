@@ -11,7 +11,7 @@ public interface IAuthService
     Task<Response<int>> Logout();
     Task<Response<AuthResponseDTO>> VerifyMagicLink(string accessToken, string refreshToken);
     Task<Response<string>> GetGoogleSignInUrl(string? redirectTo = null);
-    Task<Response<int>> SendPasswordReset(string email);
+    Task<Response<int>> SendPasswordReset(string email, string? redirectTo = null);
     Task<Response<int>> UpdatePassword(string accessToken, string refreshToken, string newPassword);
     Task<Response<AuthResponseDTO>> RefreshToken(string refreshToken);
 

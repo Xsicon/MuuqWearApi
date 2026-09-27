@@ -96,21 +96,27 @@ namespace MuuqWear.API.Controllers
             return HandleResponse(response);
         }
 
+        [AllowAnonymous]
         [HttpPost("forgot-password")]
         public async Task<ActionResult<Response<int>>> ForgotPassword(
-    [FromBody] ForgotPasswordRequestDTO request)
+            [FromBody] ForgotPasswordRequestDTO request)
         {
             if (string.IsNullOrWhiteSpace(request.Email))
                 return BadRequest(Response<int>.Fail("Email is required"));
 
-            var response = await _authService.SendPasswordReset(request.Email);
+            var response = await _authService.SendPasswordReset(
+                request.Email,
+                request.RedirectTo);
 
+            // Enumeration-safe: successful path always returns Success with a generic message.
+            // Rate-limit failures are the only BadRequest after validation.
             if (!response.Success)
                 return BadRequest(response);
 
             return HandleResponse(response);
         }
 
+        [AllowAnonymous]
         [HttpPost("reset-password")]
         public async Task<ActionResult<Response<int>>> ResetPassword(
             [FromBody] ResetPasswordRequestDTO request)

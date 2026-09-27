@@ -1,5 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using MuuqWear.API.DTO;
 using MuuqWear.API.Interfaces;
@@ -16,18 +18,32 @@ using Client = Supabase.Client;
 namespace MuuqWear.API.Service;
 public class AuthService : IAuthService
 {
+    private static readonly TimeSpan PasswordResetCooldown = TimeSpan.FromMinutes(1);
+
     private readonly Supabase.Client _client;
     private readonly IConfiguration _configuration;
     private readonly IJwtTokenService _jwtTokenService;
+    private readonly IPostmarkEmailSender _postmark;
+    private readonly IMemoryCache _cache;
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILogger<AuthService> _logger;
 
     public AuthService(
         SupabaseClientFactory factory,
         IConfiguration configuration,
-        IJwtTokenService jwtTokenService)
+        IJwtTokenService jwtTokenService,
+        IPostmarkEmailSender postmark,
+        IMemoryCache cache,
+        IHttpClientFactory httpClientFactory,
+        ILogger<AuthService> logger)
     {
         _client = factory.CreateClient();
         _configuration = configuration;
         _jwtTokenService = jwtTokenService;
+        _postmark = postmark;
+        _cache = cache;
+        _httpClientFactory = httpClientFactory;
+        _logger = logger;
     }
 
     public async Task<Response<int>> Register(RegisterRequestDTO request)
@@ -370,31 +386,115 @@ public class AuthService : IAuthService
         return $"{requestedOrigin}{callbackPath}";
     }
 
-    public async Task<Response<int>> SendPasswordReset(string email)
+    public async Task<Response<int>> SendPasswordReset(string email, string? redirectTo = null)
     {
+        // Always return a generic success after basic validation so callers cannot
+        // probe whether an email is registered.
+        if (string.IsNullOrWhiteSpace(email))
+            return Response<int>.Fail("Email is required");
+
+        var normalizedEmail = email.Trim().ToLowerInvariant();
+        var cacheKey = $"password-reset:{normalizedEmail}";
+        if (_cache.TryGetValue(cacheKey, out _))
+            return Response<int>.Fail("Too many requests. Please wait before trying again.");
+
+        _cache.Set(cacheKey, true, PasswordResetCooldown);
+
         try
         {
-            if (string.IsNullOrWhiteSpace(email))
-                return Response<int>.Fail("Email is required");
+            var redirectUrl = ResolvePasswordResetRedirectUrl(redirectTo);
+            var supabaseUrl = _configuration["SupaBase:Url"]
+                              ?? _configuration["Supabase:Url"];
+            var serviceRoleKey = _configuration["SupaBase:ServiceRoleKey"]
+                                 ?? _configuration["Supabase:ServiceRoleKey"];
 
-            var redirectUrl = _configuration["Auth:PasswordResetCallbackUrl"]
-                ?? "http://localhost:5276/auth/reset-password";
+            if (string.IsNullOrWhiteSpace(supabaseUrl)
+                || string.IsNullOrWhiteSpace(serviceRoleKey))
+            {
+                _logger.LogWarning(
+                    "Password reset skipped for {Email}: Supabase service role is not configured.",
+                    normalizedEmail);
+                return Response<int>.SuccessResponse(1, PasswordResetEmailHelper.GenericSuccessMessage);
+            }
 
-            // correct syntax for Supabase C# client 1.1.1
-            await _client.Auth.ResetPasswordForEmail(email);
+            var http = _httpClientFactory.CreateClient(nameof(AuthService));
+            var actionLink = await PasswordResetEmailHelper.GenerateRecoveryLinkAsync(
+                http,
+                supabaseUrl,
+                serviceRoleKey,
+                normalizedEmail,
+                redirectUrl);
 
-            return Response<int>.SuccessResponse(1,
-                "Password reset email sent. Please check your email.");
+            if (string.IsNullOrWhiteSpace(actionLink))
+            {
+                // Unknown email, Supabase rejection, or admin API error — still generic.
+                _logger.LogInformation(
+                    "Password reset generate_link returned no action_link for {Email}.",
+                    normalizedEmail);
+                return Response<int>.SuccessResponse(1, PasswordResetEmailHelper.GenericSuccessMessage);
+            }
+
+            var (subject, html, text) = PasswordResetEmailHelper.BuildEmail(actionLink);
+            var queued = await _postmark.SendAsync(
+                normalizedEmail,
+                subject,
+                html,
+                text,
+                tag: "password-reset");
+
+            if (!queued)
+            {
+                _logger.LogWarning(
+                    "Password reset email was not queued for {Email} (Postmark missing or failed).",
+                    normalizedEmail);
+            }
+
+            return Response<int>.SuccessResponse(1, PasswordResetEmailHelper.GenericSuccessMessage);
         }
         catch (Exception ex)
         {
-            if (ex.Message.Contains("rate limit",
-                StringComparison.OrdinalIgnoreCase))
-                return Response<int>.Fail(
-                    "Too many requests. Please wait before trying again.");
-
-            return Response<int>.Fail("Error: " + ex.Message);
+            _logger.LogError(ex, "Password reset failed unexpectedly for {Email}", normalizedEmail);
+            return Response<int>.SuccessResponse(1, PasswordResetEmailHelper.GenericSuccessMessage);
         }
+    }
+
+    private string ResolvePasswordResetRedirectUrl(string? redirectTo)
+    {
+        const string callbackPath = "/auth/reset-password";
+        var fallback = _configuration["Auth:PasswordResetRedirectUrl"]
+                       ?? _configuration["Auth:PasswordResetCallbackUrl"]
+                       ?? $"http://localhost:5276{callbackPath}";
+
+        if (string.IsNullOrWhiteSpace(redirectTo)
+            || !Uri.TryCreate(redirectTo.Trim(), UriKind.Absolute, out var requested))
+            return fallback;
+
+        var normalizedPath = requested.AbsolutePath.TrimEnd('/');
+        if (!normalizedPath.Equals(callbackPath, StringComparison.OrdinalIgnoreCase))
+            return fallback;
+
+        var allowedOrigins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (Uri.TryCreate(fallback, UriKind.Absolute, out var fallbackUri))
+            allowedOrigins.Add(fallbackUri.GetLeftPart(UriPartial.Authority));
+
+        var configuredOrigins = _configuration
+            .GetSection("Auth:AllowedFrontendOrigins")
+            .GetChildren()
+            .Select(c => c.Value)
+            .Where(v => !string.IsNullOrWhiteSpace(v));
+
+        foreach (var origin in configuredOrigins)
+        {
+            if (Uri.TryCreate(origin!.Trim().TrimEnd('/'), UriKind.Absolute, out var originUri))
+                allowedOrigins.Add(originUri.GetLeftPart(UriPartial.Authority));
+        }
+
+        var requestedOrigin = requested.GetLeftPart(UriPartial.Authority);
+        if (!allowedOrigins.Contains(requestedOrigin))
+            return fallback;
+
+        return $"{requestedOrigin}{callbackPath}";
     }
 
     public async Task<Response<int>> UpdatePassword(
@@ -425,6 +525,15 @@ public class AuthService : IAuthService
             {
                 Password = newPassword
             });
+
+            try
+            {
+                await _client.Auth.SignOut();
+            }
+            catch (Exception signOutEx)
+            {
+                _logger.LogWarning(signOutEx, "SignOut after password reset failed; password was still updated.");
+            }
 
             return Response<int>.SuccessResponse(1,
                 "Password updated successfully");
